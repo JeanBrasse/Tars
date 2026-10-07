@@ -5,7 +5,7 @@ Every surface the app can render today. A frame must exist for each line here;
 
 The frames live in two Pencil documents, and the second is a fork of the first
 rather than a companion to it. `design/tars-redesign.pen` holds 134 root frames.
-`design/chat-design.pen` holds 72 of those, the other fifty-five being newer than the
+`design/chat-design.pen` holds 72 of those, the other sixty-two being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -47,7 +47,7 @@ agents), and you open several chats in it, each a conversation with the orchestr
 on one topic, all served by the same team, several at once. The current Chat stays as
 it is, as the super orchestrator's space, and the chats are added beside it. Design
 only: nothing below is built or routed until these frames and the Backend's
-orchestrator per chat design (v2.1) agree, which is why the first column names no
+orchestrator per chat design (v2.2) agree, which is why the first column names no
 route and `npm run e2e:guard` does not read this table.
 
 | Surface | Frames |
@@ -62,7 +62,7 @@ route and `npm run e2e:guard` does not read this table.
 
 Each frame has its `· light` copy beside it. One notes frame per document says what
 each frame shows: Chats · shell · notes, and Chats · chat page · notes, which also
-says how the room relates to the chats and what follows the Backend's v2.1.
+says how the room relates to the chats and what follows the Backend's v2.2.
 
 ## Pages (14)
 
