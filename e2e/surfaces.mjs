@@ -225,7 +225,11 @@ export const VOLATILE = {
   },
   'disk-space': {
     surfaces: ['settings-system'],
-    selector: 'text=/^\\d+ GB free/',
+    // The Disk row's hint and its 300px control column, boxes whose size the
+    // numbers do not move: masking the "N GB free" text itself gave a box one
+    // digit wider or narrower when the disk crossed 10 or 100 GB free, about
+    // 100 pixels (QA's gate of #336).
+    selector: '[data-settings-row]:has([data-settings-label]:text-is("Disk")) [data-settings-hint], [data-settings-row]:has([data-settings-label]:text-is("Disk")) > div:nth-child(2)',
     why: 'the free and total space of the disk the run is on, which moves with everything written to it',
   },
   'cli-versions': {
