@@ -48,7 +48,10 @@
  * - a project of Noah's: the seed's second project is named after a real one,
  *   so here it is renamed to an invented one before anything reads it, and
  *   French quotes in a seeded task read as English ones (Noah's go of 07/10).
- *   A shot whose page still shows the old name or a guillemet fails;
+ *   A shot whose page still shows the old name or a guillemet fails the run,
+ *   and no picture is written: they are taken into a folder of their own and
+ *   copied into the output only once every page has passed (the Audit's L1
+ *   of #344);
  * - Hermes not answering: the seed points every suite at a dead port, so the
  *   Chat led with its error and the Kanban page was that error whole. A
  *   stand-in Hermes of the script's own, on a free port of 127.0.0.1, answers
@@ -56,8 +59,9 @@
  *   is asked is a 404, printed. No real Hermes is ever reached.
  */
 import { _electron as electron } from '@playwright/test';
-import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { launchSandboxed, seedSandbox } from '../e2e/fixture.mjs';
 
@@ -250,6 +254,8 @@ const startHere = writeStandIn(home);
 const seen = newestChangelogId();
 const hideDevIndicator = readFileSync(join('e2e', 'screenshot.css'), 'utf8');
 mkdirSync(OUT, { recursive: true });
+// Where the shots are taken, until every page has passed its guard.
+const stage = mkdtempSync(join(tmpdir(), 'tars-readme-shots-'));
 
 let app;
 try {
@@ -289,12 +295,16 @@ try {
     for (const word of [oldName, '\u00ab', '\u00bb']) {
       if (shown.includes(word)) throw new Error(`${file} would show ${JSON.stringify(word)}`);
     }
-    await page.screenshot({ path: join(OUT, file), animations: 'disabled' });
+    await page.screenshot({ path: join(stage, file), animations: 'disabled' });
     if (whole) await page.setViewportSize({ width: 1440, height: 900 });
+  }
+  for (const { file } of SHOTS) {
+    copyFileSync(join(stage, file), join(OUT, file));
     console.log(`wrote ${join(OUT, file)}`);
   }
 } finally {
   await app?.close().catch(() => {});
   hermes.close();
   rmSync(home, { recursive: true, force: true });
+  rmSync(stage, { recursive: true, force: true });
 }
