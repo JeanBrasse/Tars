@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 127 root frames.
-`design/chat-design.pen` holds 72 of those, the other fifty-five being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 134 root frames.
+`design/chat-design.pen` holds 72 of those, the other sixty-two being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -39,6 +39,30 @@ same change. Draw anything for the site in `landing.pen`.
 Generated against the code, not from memory. Anything removed from the app
 (ClaudeMon, Support, the 3D view, Obsidian, Automations, Scheduled Tasks,
 custom dashboard boards, the sidebar collapse) is deliberately absent.
+
+## Drawn, not built yet: chats per project (2026-10-07)
+
+Noah's direction of 2026-10-07: a project keeps its team (the orchestrator and its
+agents), and you open several chats in it, each a conversation with the orchestrator
+on one topic, all served by the same team, several at once. The current Chat stays as
+it is, as the super orchestrator's space, and the chats are added beside it. Design
+only: nothing below is built or routed until these frames and the Backend's
+orchestrator per chat design (v2.2) agree, which is why the first column names no
+route and `npm run e2e:guard` does not read this table.
+
+| Surface | Frames |
+|---|---|
+| The shell: main menu (Chat, Projects, then Dashboard, Kanban and Schedules), New chat, the fixed first entry Tars, all projects, the chat list (a project filter; how many chats work against the Mac's limit; Pinned, Active, Working, Snoozed, Settled; each row with its title, project and number, and state), More at the foot | `tars-redesign.pen`: Shell · chats · project page |
+| More open: Agents, Review, Logs, Vault, Extensions, Usage, Brain, Settings, What's New | `tars-redesign.pen`: Shell · chats · More open |
+| A page of More, opened as a card above the app, over a scrim | `tars-redesign.pen`: Shell · chats · Settings card |
+| A project's page: its chats by number, its team, its Dashboard terminals and its room | `tars-redesign.pen`: Shell · chats · project page |
+| The chat page: the conversation, its head (title, project and number, team) and what the chat delegated, with its state and result | `chat-redesign-a.pen`: Chat · chats · orchestrator working, · a worker on another chat, · a result back, · waiting on you, · every slot working, · a task given up |
+| New chat: the project, the current one already chosen; the next number; the title from the first message | `chat-redesign-a.pen`: Chat · chats · new chat |
+| Tars, all projects: the current Chat page, unchanged, opened from the new shell | `chat-redesign-a.pen`: Chat · chats · Tars, all projects |
+
+Each frame has its `· light` copy beside it. One notes frame per document says what
+each frame shows: Chats · shell · notes, and Chats · chat page · notes, which also
+says how the room relates to the chats and what follows the Backend's v2.2.
 
 ## Pages (14)
 
