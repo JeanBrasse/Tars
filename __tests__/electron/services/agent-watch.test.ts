@@ -698,3 +698,54 @@ describe('an agent that ends its turn with background work still running (2026-0
     expect(agentManager.agents.get('audit')!.requestedBy).toBeUndefined();
   });
 });
+
+describe('two requests at one worker, each told to its own asker (PR A, core/task-requests.ts)', () => {
+  // Written with the code, not before it (Rule 3, said plainly): each is
+  // shown to bite by a mutant of the code it covers, in the PR.
+  it('the first result goes to the first asker, and the next delivered request takes the link', async () => {
+    const tasks = await import('../../../electron/core/task-requests');
+    const orchTerminal = attachTerminal('pty-orch');
+    const botTerminal = attachTerminal('pty-bot');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'bot', name: 'Release-Bot', status: 'idle', ptyId: 'pty-bot' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', ptyId: 'pty-w' });
+    const w = agentManager.agents.get('w')!;
+    const a = tasks.enqueueRequest(w, 'orch');
+    const b = tasks.enqueueRequest(w, 'bot');
+    tasks.requestDelivered(w, a);
+    tasks.requestDelivered(w, b);
+
+    move('w', 'completed');
+    expect(received(orchTerminal)).toContain('Worker');
+    expect(received(botTerminal)).toBe('');
+    expect(w.requestedBy).toMatchObject({ agentId: 'bot', taskRef: b });
+
+    move('w', 'running');
+    move('w', 'completed');
+    expect(received(botTerminal)).toContain('Worker');
+  });
+
+  it("a stopped worker's queued request is told to its asker as never run", async () => {
+    const tasks = await import('../../../electron/core/task-requests');
+    const botTerminal = attachTerminal('pty-bot');
+    putAgent({ id: 'bot', name: 'Release-Bot', status: 'idle', ptyId: 'pty-bot' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', ptyId: 'pty-w' });
+    const w = agentManager.agents.get('w')!;
+    tasks.enqueueRequest(w, 'bot');
+
+    tasks.endWorkerRequests(w, 'stopped');
+
+    expect(received(botTerminal)).toContain('never ran what you asked of it');
+    expect(w.taskQueue).toEqual([]);
+  });
+
+  it('a requester with no terminal has its news carried, not dropped', () => {
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'stopped' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+
+    move('w', 'completed');
+
+    expect(watch.owedNews().map(n => [n.requesterId, n.childId])).toContainEqual(['orch', 'w']);
+  });
+});
+

@@ -94,7 +94,8 @@ export function sleepRefusal(f: SleepFacts): SleepRefusal | null {
   return null;
 }
 
-function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: number): SleepFacts {
+/** What the sleep rule reads of an agent, from the fleet as it is. Exported for its tests. */
+export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: number): SleepFacts {
   const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   const fleet = [...agents.values()];
   return {

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { restPendingOf, sleepRefusal, waitsOnItself, SLEEP_AFTER_MS, type SleepFacts } from '../../../electron/services/agent-sleep';
+import { factsOf, restPendingOf, sleepRefusal, waitsOnItself, SLEEP_AFTER_MS, type SleepFacts } from '../../../electron/services/agent-sleep';
+import { agents } from '../../../electron/core/agent-manager';
+import { enqueueRequest } from '../../../electron/core/task-requests';
+import type { AgentStatus } from '../../../electron/types';
 import type { Proc } from '../../../electron/services/stall-watch';
 
 /**
@@ -35,6 +38,8 @@ import type { Proc } from '../../../electron/services/stall-watch';
  *    its last Stop hook counted decides; a Stop hook that counted nothing (an
  *    older claude) leaves it to the transcript's background work; a count that
  *    is not one is not taken.
+ * 17. (PR A, written with its code and shown to bite by a mutant) A requester whose request is still out at a
+ *     worker, queued or written, is not owed anything, and is put to sleep before the answer comes.
  */
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z');
@@ -160,3 +165,18 @@ describe('what its CLI holds in-process', () => {
     expect(restPendingOf({ crons: 1e12, background: 0 })).toEqual({ crons: 1e12, background: 0 });
   });
 });
+
+describe('a request still out at a worker', () => {
+  it('17. keeps its requester owed, whether it is queued or written', () => {
+    agents.clear();
+    const orch = { id: 'orch', name: 'Orchestrator', status: 'idle', projectPath: '/p', skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
+    const worker = { id: 'w', name: 'Worker', status: 'running', projectPath: '/p', skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
+    agents.set('orch', orch);
+    agents.set('w', worker);
+    expect(factsOf(orch, [], Date.now()).owes).toBe(false);
+    enqueueRequest(worker, 'orch');
+    expect(factsOf(orch, [], Date.now()).owes).toBe(true);
+    agents.clear();
+  });
+});
+
