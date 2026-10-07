@@ -615,11 +615,17 @@ function requestFor(agent: AgentStatus, req: RouteRequest): string | undefined {
   return ref;
 }
 
-/** Written into the agent's terminal: the request may take the link (core/task-requests.ts). */
-function delivered(agent: AgentStatus, ref: string | undefined): void {
-  if (!ref) return;
+/**
+ * Written into the agent's terminal: the request may take the link
+ * (core/task-requests.ts). Returns whether it is now the agent's work: a
+ * request typed in during another's turn waits, and must not move what marks
+ * the work in hand (QA's gate of #351). A message with no request is.
+ */
+function delivered(agent: AgentStatus, ref: string | undefined): boolean {
+  if (!ref) return true;
   requestDelivered(agent, ref);
   saveAgents();
+  return agent.requestedBy?.taskRef === ref;
 }
 
 /** Refused before anything was typed: the caller had the answer, so nobody is told. */
@@ -855,16 +861,22 @@ async function performDispatchLocked(
     // `onWritten` runs at once for a message that goes straight in.
     let cancelRetell: (() => void) | undefined;
     let handed = false;
-    const handedOver = () => {
+    // `isTheWork`: false for a request typed in during another request's
+    // turn. It waits behind that work, and moving `workHandedAt` made the turn
+    // in hand no longer count as handed work: its end told nobody (QA's gate
+    // of #351). Its own turn, when it comes, is after the mark either way.
+    const handedOver = (isTheWork = true) => {
       if (handed) return;
       handed = true;
       cancelRetell?.();
       agent.status = 'running';
       agent.waitingReason = undefined;
-      agent.workHandedAt = new Date().toISOString();
-      // This message starts a new piece of work in the same session; the
-      // previous task's captured output must not be mistaken for its result.
-      agent.lastCleanOutput = undefined;
+      if (isTheWork) {
+        agent.workHandedAt = new Date().toISOString();
+        // This message starts a new piece of work in the same session; the
+        // previous task's captured output must not be mistaken for its result.
+        agent.lastCleanOutput = undefined;
+      }
       agent.lastActivity = new Date().toISOString();
       saveAgents();
       announceAgent(agent);
@@ -875,12 +887,12 @@ async function performDispatchLocked(
       sender: opts.sender ?? { kind: 'tars' },
       // Both: the agent reads working once the message is in (#314), and the
       // caller hears it went in or was given up (#292).
-      onWritten: () => { delivered(agent, taskRef); handedOver(); opts.onWritten?.(); },
+      onWritten: () => { handedOver(delivered(agent, taskRef)); opts.onWritten?.(); },
       onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); opts.onDropped?.(); },
       taskRef,
     });
     if (outcome === 'refused') dropped(agent, taskRef);
-    if (outcome !== 'held' && outcome !== 'refused') { delivered(agent, taskRef); handedOver(); }
+    if (outcome !== 'held' && outcome !== 'refused') handedOver(delivered(agent, taskRef));
     if (outcome === 'held') cancelRetell = retellWhileHeld(agent, opts.sender, Date.now());
     // `held` is not `written`. The message is queued for that terminal and
     // goes in when the field frees, but answering a caller "sent" while
@@ -1468,13 +1480,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // Working once it is in, as /dispatch (bug-held-forever-05-10.md).
         let cancelRetell: (() => void) | undefined;
         let handed = false;
-        const handedOver = () => {
+        // As /dispatch: a request waiting behind another's turn does not move the mark.
+        const handedOver = (isTheWork = true) => {
           if (handed) return;
           handed = true;
           cancelRetell?.();
           agent.status = 'running';
           agent.waitingReason = undefined;
-          agent.workHandedAt = new Date().toISOString();
+          if (isTheWork) agent.workHandedAt = new Date().toISOString();
           agent.lastActivity = new Date().toISOString();
           saveAgents();
           announceAgent(agent);
@@ -1484,12 +1497,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
           agentId: agent.id,
           from: senderName(agent, req),
           sender,
-          onWritten: () => { delivered(agent, taskRef); handedOver(); },
+          onWritten: () => handedOver(delivered(agent, taskRef)),
           onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); },
           taskRef,
         });
         if (outcome === 'refused') dropped(agent, taskRef);
-        if (outcome !== 'held' && outcome !== 'refused') { delivered(agent, taskRef); handedOver(); }
+        if (outcome !== 'held' && outcome !== 'refused') handedOver(delivered(agent, taskRef));
         if (outcome === 'held') cancelRetell = retellWhileHeld(agent, sender, Date.now());
         sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: heldReasonFor(agent) } : {}) });
         return;

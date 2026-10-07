@@ -83,12 +83,21 @@ function link(worker: RequestWorker, request: TaskRequest): void {
 /** Written into the worker's terminal: it takes the link when no request holds it. */
 export function requestDelivered(worker: RequestWorker, ref: string): void {
   const request = worker.taskQueue?.find(r => r.ref === ref);
-  if (!request) return;
+  // Once: the write's callback and its answer both report it.
+  if (!request || request.state === 'delivered') return;
   request.state = 'delivered';
   // A link holds while its request is still out; one written before requests
   // had ids (an older Tars) holds until its work is spent.
   const holder = worker.requestedBy;
   const holds = !!holder && (!holder.taskRef || worker.taskQueue!.some(r => r.ref === holder.taskRef));
+  // The same asker's newer request takes over its earlier one, which is spent
+  // without a word: telling it "finished" before the newer has begun misled
+  // the asker, and left unspent it came back as a stale link (QA's gate of #351).
+  if (holds && holder!.taskRef && holder!.taskRef !== request.ref && holder!.agentId === request.requesterAgentId) {
+    worker.taskQueue = worker.taskQueue!.filter(r => r.ref !== holder!.taskRef);
+    link(worker, request);
+    return;
+  }
   if (!holds) link(worker, request);
 }
 
