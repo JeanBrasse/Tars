@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readTaskCosts } from '../../../electron/services/task-cost';
+import { readTaskCosts, taskReport } from '../../../electron/services/task-cost';
 import { clearTranscriptUsageCache } from '../../../electron/services/transcript-usage';
 import { resetCatalogCache } from '../../../electron/services/model-catalog';
 import { DATA_DIR } from '../../../electron/constants';
@@ -23,6 +23,14 @@ import type { TaskRecord } from '../../../electron/services/task-ledger';
  *     than a transcript line without the split (cache writes at the 5-minute rate, transcript-usage.ts); or nothing
  *     says which source priced it.
  * 21. Where both exist, the turns change the figures: added on top of the transcript, or taken in its place.
+ * And from the Audit's L1 on #333, a task over two sessions whose transcripts are only partly there:
+ * 22. The turns of the session that lost its transcript are ignored, and the task is priced from the other session
+ *     alone.
+ * 23. It reads `from: 'transcript'`, saying neither that its turns priced part of it nor that part is missing.
+ * 24. A session with neither a transcript nor recorded turns leaves the figure looking whole: neither the task nor
+ *     its total says partial.
+ * 25. Turns recorded by 1.9.3, with no session, are taken for the session that lost its transcript, where they may
+ *     be the other's: counted twice, or put in the wrong place. Such a task is partial instead.
  */
 
 const T0 = Date.UTC(2026, 9, 6, 9, 0, 0);
@@ -89,5 +97,52 @@ describe('a task priced from its turns', () => {
     expect(withTurns.tokens).toEqual(without.tokens);
     expect(withTurns.byModel).toEqual(without.byModel);
     expect(withTurns.from).toBe('transcript');
+  });
+});
+
+describe('a task over two sessions, one transcript gone (the Audit\'s L1 on #333)', () => {
+  const reply = (id: string, at: number, input: number, output: number) => ({
+    type: 'assistant', requestId: `req_${id}`, timestamp: new Date(at).toISOString(), message: { id, model: MODEL, usage: { input_tokens: input, output_tokens: output } },
+  });
+  const opus = (input: number, output: number) => ({ [MODEL]: { input, output, cacheRead: 0, cacheWrite: 0 } });
+  // sess-1's transcript is gone; sess-2's is there, and says 3 M in.
+  const twoSessions = (over: Partial<TaskRecord> = {}) => task({ sessionIds: ['sess-1', 'sess-2'], ...over });
+  beforeEach(() => transcript('sess-2.jsonl', [reply('m2', T0 + 30_000, 3_000_000, 0)]));
+
+  it('22, 23. prices each session from what it has: the transcript where it is, the turns where it is gone', async () => {
+    const cost = (await readTaskCosts([twoSessions({
+      usageBySession: { 'sess-1': opus(1_000_000, 500_000), 'sess-2': opus(9_000_000, 0) },
+      usageByModel: opus(10_000_000, 500_000), usageTurns: 2,
+    })], { homeDir: home })).get('task-a')!;
+    // sess-1 from its turns (1 + 1), sess-2 from its transcript (3), never its turns (9).
+    expect(cost.costUSD).toBeCloseTo(5, 9);
+    expect(cost.tokens).toEqual({ input: 4_000_000, output: 500_000, cacheRead: 0, cacheWrite: 0 });
+    expect(cost.from).toBe('mixed');
+    expect(cost.partial).toBe(false);
+  });
+
+  it('24. a session with neither makes the task partial, and its total', async () => {
+    const tasks = [twoSessions({ usageBySession: { 'sess-2': opus(9_000_000, 0) }, usageByModel: opus(9_000_000, 0), usageTurns: 1 })];
+    const costs = await readTaskCosts(tasks, { homeDir: home });
+    const cost = costs.get('task-a')!;
+    expect(cost.costUSD).toBeCloseTo(3, 9);
+    expect(cost.from).toBe('transcript');
+    expect(cost.partial).toBe(true);
+    const report = taskReport(tasks, costs, {}, T0 + 3_600_000);
+    expect(report.tasks[0].totalPartial).toBe(true);
+  });
+
+  it('25. turns recorded with no session are not taken for the session that lost its transcript: the task is partial', async () => {
+    const cost = (await readTaskCosts([twoSessions({ usageByModel: opus(1_000_000, 500_000), usageTurns: 2 })], { homeDir: home })).get('task-a')!;
+    expect(cost.costUSD).toBeCloseTo(3, 9);
+    expect(cost.from).toBe('transcript');
+    expect(cost.partial).toBe(true);
+  });
+
+  it('every session there: whole, from the transcripts, as before', async () => {
+    transcript('sess-1.jsonl', [reply('m1', T0 + 10_000, 1_000_000, 0)]);
+    const cost = (await readTaskCosts([twoSessions({ usageBySession: { 'sess-1': opus(5, 5) }, usageByModel: opus(5, 5), usageTurns: 1 })], { homeDir: home })).get('task-a')!;
+    expect(cost.costUSD).toBeCloseTo(4, 9);
+    expect(cost).toMatchObject({ from: 'transcript', partial: false });
   });
 });

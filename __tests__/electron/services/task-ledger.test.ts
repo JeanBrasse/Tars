@@ -49,6 +49,9 @@ import { createTaskLedger, turnUsageOf, type TaskAgentView } from '../../../elec
  * 18. The usage does not survive a restart; or a usage line that is not one (counts that are not counts, a model that
  *     is not text, a task the ledger does not know) is taken.
  * 19. Several turns of a task, on one model or several, are not summed per model.
+ * 26. (the Audit's L1 on #333) A turn's usage loses its session: written without it, read back without it, or lost
+ *     when the file is rewritten; or a session id that is not one is taken with it. Without it a task over two
+ *     sessions cannot be priced per session.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
@@ -515,5 +518,52 @@ describe('the usage of each turn (mods step 4)', () => {
       { input_tokens: '1', output_tokens: 1, model: 'm' }, { input_tokens: 1, output_tokens: 1, model: 'm'.repeat(201) }]) {
       expect(turnUsageOf(bad), JSON.stringify(bad)).toBeNull();
     }
+  });
+});
+
+describe('the session of each turn\'s usage (the Audit\'s L1 on #333)', () => {
+  const usage = (input: number, output: number, model = 'claude-opus-5-5') => ({ model, input, output, cacheRead: 0, cacheWrite: 0 });
+
+  it('26. is kept with it, per session and per model, and read back so', () => {
+    const ledger = open();
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'work' });
+    ledger.turnUsage('worker-1', 'sess-1', usage(10, 5));
+    ledger.turnStarted(agent(), { sessionId: 'sess-2' });
+    ledger.turnUsage('worker-1', 'sess-2', usage(20, 10));
+    ledger.turnUsage('worker-1', 'sess-2', usage(1, 1, 'claude-haiku-4-5'));
+    const want = {
+      'sess-1': { 'claude-opus-5-5': { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } },
+      'sess-2': { 'claude-opus-5-5': { input: 20, output: 10, cacheRead: 0, cacheWrite: 0 }, 'claude-haiku-4-5': { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } },
+    };
+    expect(ledger.tasks()[0].usageBySession).toEqual(want);
+    expect(fs.readFileSync(file, 'utf-8')).toContain('"sessionId":"sess-2"');
+    expect(open().tasks()[0].usageBySession).toEqual(want);
+  });
+
+  it('26. survives a rewrite of the file past its bound', () => {
+    const ledger = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 });
+    for (let i = 0; i < 40; i++) {
+      ledger.turnStarted(agent(), { sessionId: `sess-${i}` });
+      ledger.turnUsage('worker-1', `sess-${i}`, usage(i + 1, 1));
+      ledger.stateChanged(agent({ status: 'idle' }));
+      clock += 1_000;
+    }
+    const last = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 }).tasks().at(-1)!;
+    expect(last.usageBySession).toEqual({ 'sess-39': { 'claude-opus-5-5': { input: 40, output: 1, cacheRead: 0, cacheWrite: 0 } } });
+  });
+
+  it('26. a usage line whose session is not one is skipped; one written by 1.9.3, with none, is kept as a session not known', () => {
+    const ledger = open();
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'work' });
+    const id = ledger.tasks()[0].id;
+    fs.appendFileSync(file, [
+      { t: 'usage', id, at: clock, sessionId: '../../etc/passwd', model: 'm', input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+      { t: 'usage', id, at: clock, sessionId: 42, model: 'm', input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+      { t: 'usage', id, at: clock, model: 'm', input: 7, output: 0, cacheRead: 0, cacheWrite: 0 },
+    ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const read = open().tasks()[0];
+    expect(read.usageByModel).toEqual({ m: { input: 7, output: 0, cacheRead: 0, cacheWrite: 0 } });
+    expect(read.usageBySession ?? {}).toEqual({});
+    expect(read.usageTurns).toBe(1);
   });
 });
