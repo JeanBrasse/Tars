@@ -739,6 +739,21 @@ describe('two requests at one worker, each told to its own asker (PR A, core/tas
     expect(w.taskQueue).toEqual([]);
   });
 
+  it("a stopped worker's running task is told to its asker as cut, not as never run", async () => {
+    const tasks = await import('../../../electron/core/task-requests');
+    const orchTerminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', ptyId: 'pty-w' });
+    const w = agentManager.agents.get('w')!;
+    tasks.requestDelivered(w, tasks.enqueueRequest(w, 'orch'));
+
+    tasks.endWorkerRequests(w, 'stopped', { withLinked: true });
+
+    expect(received(orchTerminal)).toContain('was stopped while working on what you asked of it');
+    expect(w.requestedBy).toBeUndefined();
+    expect(w.taskQueue).toEqual([]);
+  });
+
   it('a requester with no terminal has its news carried, not dropped', () => {
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'stopped' });
     putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
