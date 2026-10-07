@@ -45,8 +45,10 @@ import type { OrphanFolder } from '../../src/types/electron';
  *    9db11f16 main sends the code and a path inside the folder. The words
  *    lose the code a search needs, or the path; a code without words reads
  *    as nothing; one of main's own sentences or a process's name is
- *    rewritten; a path inside the folder hides, turns or breaks the line
- *    (written before the code, Noah's go of 07/10).
+ *    rewritten; a path inside the folder hides, turns or breaks the line,
+ *    and so does a detail shown as main sent it, a process's name from lsof
+ *    or /proc (written before the code, Noah's go of 07/10; that last case
+ *    added after it, at the Audit's gate of #345, and seen red on a mutant).
  */
 
 const GB = 1024 ** 3;
@@ -213,5 +215,11 @@ describe('why a folder was kept, in its title (11)', () => {
     const rlo = String.fromCodePoint(0x202e);
     const ls = String.fromCodePoint(0x2028);
     expect(keptTitle(failed(`EACCES on a${rlo}b${ls}c`))).toBe('permission denied: a b c (EACCES)');
+  });
+
+  it('flattens a detail shown as main sent it, a process named by a hostile binary', () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const nl = String.fromCodePoint(0x0a);
+    expect(keptTitle({ path: '/p/.worktrees/busy', project: '/p', reason: 'in-use', detail: `a${rlo}b${nl}c (1)` })).toBe('a b c (1)');
   });
 });
