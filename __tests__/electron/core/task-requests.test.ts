@@ -36,6 +36,11 @@
  * 10. (M1) At a launch after a clean quit, a worker's request in hand keeps a
  *     link to a terminal that is gone: never spent, its asker owed for ever.
  *     Only a worker the resume restarts keeps it.
+ * And from QA's gate of #351, written before the fix:
+ * 11. A newer request from the asker of the work in hand, typed in during
+ *     its turn, waits behind it like another asker's would: the earlier one
+ *     is then told as done before the newer has begun, or stays unspent and
+ *     comes back as a stale link. It takes over, the earlier spent unspoken.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -197,6 +202,23 @@ describe('a launch after Tars stopped (the Audit\'s M1)', () => {
     } finally {
       setRequestsEndedHook(undefined);
     }
+  });
+});
+
+describe('a newer request from the same asker (QA\'s gate of #351)', () => {
+  it('11. takes over the work in hand, the earlier one spent without a word', () => {
+    const w = worker();
+    const first = enqueueRequest(w, 'orch');
+    requestDelivered(w, first);
+    const second = enqueueRequest(w, 'orch');
+    requestDelivered(w, second);
+    expect(w.requestedBy).toMatchObject({ agentId: 'orch', taskRef: second });
+    expect(w.taskQueue!.map(r => r.ref)).toEqual([second]);
+
+    // Another asker's still waits.
+    const other = enqueueRequest(w, 'bot');
+    requestDelivered(w, other);
+    expect(w.requestedBy).toMatchObject({ taskRef: second });
   });
 });
 
