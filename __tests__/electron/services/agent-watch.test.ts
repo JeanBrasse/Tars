@@ -789,6 +789,9 @@ describe('two requests at one worker, each told to its own asker (PR A, core/tas
     move('w', 'running');
     expect(tasks.bindTurn(w, `${asOrch(a2)}task two`)).toBe(true);
     move('w', 'completed');
+    // The first note's carriage return goes out after a short delay; a second
+    // note to the same terminal waits for it (agent-watch, `delivering`).
+    await new Promise(r => setTimeout(r, ptyManager.PROGRAMMATIC_SUBMIT_DELAY_MS + 300));
     expect(told(), "the follow-up's own end").toBe(2);
     expect(w.taskQueue).toEqual([]);
   });

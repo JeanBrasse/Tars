@@ -90,14 +90,9 @@ export function requestDelivered(worker: RequestWorker, ref: string): void {
   // had ids (an older Tars) holds until its work is spent.
   const holder = worker.requestedBy;
   const holds = !!holder && (!holder.taskRef || worker.taskQueue!.some(r => r.ref === holder.taskRef));
-  // The same asker's newer request takes over its earlier one, which is spent
-  // without a word: telling it "finished" before the newer has begun misled
-  // the asker, and left unspent it came back as a stale link (QA's gate of #351).
-  if (holds && holder!.taskRef && holder!.taskRef !== request.ref && holder!.agentId === request.requesterAgentId) {
-    worker.taskQueue = worker.taskQueue!.filter(r => r.ref !== holder!.taskRef);
-    link(worker, request);
-    return;
-  }
+  // Every request waits for the one in hand, the same asker's too: a takeover
+  // reported the first turn's end as the follow-up's, and the follow-up's own
+  // result reached nobody (the Audit's M2 on #351). Two truthful reports.
   if (!holds) link(worker, request);
 }
 
