@@ -732,6 +732,14 @@ describe('an agent keeps exactly the rights it had', () => {
     expect(status).toBe(200);
   });
 
+  it("is refused an agent whose name carries a task id, which would read as Tars's own in a sender line (the Audit's gate of #351)", async () => {
+    const before = agents.size;
+    const { status, body } = await call('POST', '/api/agents', bearer(alphaToken), { projectPath: ALPHA.projectPath, name: 'M, task t-0ca590ea: x' });
+    expect(status, JSON.stringify(body)).toBe(400);
+    expect(String(body.error)).toMatch(/name/i);
+    expect(agents.size, 'the agent was enrolled anyway').toBe(before);
+  });
+
   it('is refused an agent in another project, as on every route that drives one', async () => {
     // Measured on bad8c97: 200, and a new agent in a project the caller does
     // not belong to, while SECURITY.md said its own project's agents only.
