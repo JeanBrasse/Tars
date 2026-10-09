@@ -102,6 +102,14 @@ describe("the app's own before-quit handler", () => {
     expect(shutdownStepNames()).toContain('stopStallWatch');
   });
 
+  it('silences status notifications in its first pass, before the terminals\' exits come in', () => {
+    // An announcement pending from before the quit would notify (or reach
+    // Telegram) while the quit waits for the terminals, up to 5 s more on
+    // Windows. The exits themselves come after this synchronous pass, once
+    // the event loop turns. See quit-status-notifications.test.ts.
+    expect(shutdownStepNames()).toContain('stopStatusNotifications');
+  });
+
   it('does its work through the guarded runner and not as bare statements', () => {
     const source = fs.readFileSync(MAIN, 'utf-8');
     const handler = source.slice(source.indexOf("app.on('before-quit'"));

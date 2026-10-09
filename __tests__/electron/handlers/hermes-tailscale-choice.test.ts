@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { tailscaleCandidates } from '../../../electron/platform';
 
 /**
  * Which `tailscale` the Hermes settings page asks (QA's note on #222).
@@ -16,6 +17,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * 3. A packaged Tars obeys it: an environment variable would choose the
  *    program Tars runs for a user who never asked.
  * 4. Over-correction: unset, the three places are no longer tried.
+ *
+ * The places are this platform's (tailscaleCandidates): the three of macOS
+ * and Linux (integration-paths-posix.test.ts), tailscale.exe on the PATH or
+ * under Program Files on Windows (integration-paths.test.ts).
  *
  * Two more, found at QA's gate of #226 (2026-09-28): each passes on the code
  * and fails on a mutant that the four above let through.
@@ -61,7 +66,8 @@ afterEach(() => {
   else process.env.DOROTHY_TAILSCALE_BIN = saved;
 });
 
-const status = () => ran.filter(r => r.endsWith(' status --json')).map(r => r.split(' ')[0]);
+// The program, whole: on Windows it is C:\Program Files\Tailscale\tailscale.exe, spaces and all.
+const status = () => ran.filter(r => r.endsWith(' status --json')).map(r => r.slice(0, -' status --json'.length));
 
 describe('the tailscale the Hermes page asks', () => {
   it('1. is the one DOROTHY_TAILSCALE_BIN names, and no other', async () => {
@@ -84,13 +90,13 @@ describe('the tailscale the Hermes page asks', () => {
     packaged.value = true;
     process.env.DOROTHY_TAILSCALE_BIN = '/sandbox/fake-tailscale';
     await info();
-    expect(status()).toEqual(['tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale']);
+    expect(status()).toEqual(tailscaleCandidates());
   });
 
   it('4. is looked for in the three places when it is unset', async () => {
     delete process.env.DOROTHY_TAILSCALE_BIN;
     await info();
-    expect(status()).toEqual(['tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale']);
+    expect(status()).toEqual(tailscaleCandidates());
   });
 
   it('5. is still the named one alone when that one fails, and the page reads not installed', async () => {
