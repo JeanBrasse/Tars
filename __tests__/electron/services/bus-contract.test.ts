@@ -1537,7 +1537,8 @@ describe('files for a room', () => {
   it('refuses to stage through a bus-files folder that is a link', async () => {
     const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-elsewhere-'));
     fs.rmSync(path.join(tmp, 'bus-files'), { recursive: true, force: true });
-    fs.symlinkSync(elsewhere, path.join(tmp, 'bus-files'));
+    // A junction: Windows lets any account make one; the type is ignored off Windows.
+    fs.symlinkSync(elsewhere, path.join(tmp, 'bus-files'), 'junction');
     try {
       const result = await stage([{ name: 'a.txt', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
 

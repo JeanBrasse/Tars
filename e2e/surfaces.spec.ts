@@ -1,10 +1,8 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
-import * as fs from 'fs';
 import * as os from 'os';
-import * as path from 'path';
 import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, USAGE_DAY, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, pinDayOn, seedSandbox, stubSkillsSh, settleFleet } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, makeShotSandbox, markWhatsNewSeen, pinDayOn, removeShotSandbox, seedSandbox, splashGone, stubSkillsSh, settleFleet } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -28,7 +26,8 @@ let sandboxHome: string;
 const pageErrors: string[] = [];
 
 test.beforeAll(async () => {
-  sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-'));
+  // Same length on every machine on Windows: the pages print paths under it (makeShotSandbox).
+  sandboxHome = makeShotSandbox('dorothy-e2e-', os.tmpdir());
   // Photograph a populated app, not an empty one. Every surface used to render
   // its own empty state, which cannot show a status colour, a row rhythm, a
   // truncation or a full column - so the screenshots guarded almost nothing.
@@ -58,7 +57,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  fs.rmSync(sandboxHome, { recursive: true, force: true });
+  removeShotSandbox(sandboxHome);
 });
 
 for (const surface of ALL as Array<{ name: string; route: string; clickText?: string; clickText2?: string; clickRole?: 'radio'; settle?: number }>) {
@@ -66,6 +65,8 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     const errorsBefore = pageErrors.length;
 
     await page.goto(DEV_URL + surface.route, { waitUntil: 'domcontentloaded' });
+    // Photographed once the launch splash, shown again by every load, has gone.
+    await splashGone(page);
     await page.waitForTimeout(600);
 
     // Settings labels collide with the main navigation ('Extensions' is both a

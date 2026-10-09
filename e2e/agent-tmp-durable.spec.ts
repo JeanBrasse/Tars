@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { launchSandboxed, recordValues } from './fixture.mjs';
+import { launchSandboxed, recordValues, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -31,16 +31,16 @@ test("an agent's CLI gets a temporary folder under ~/.dorothy/tmp that outlives 
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const seen = path.join(home, 'env-seen.jsonl');
-  const cli = path.join(bin, 'claude');
-  fs.writeFileSync(cli, [
-    `#!${process.execPath}`,
+  // writeNodeCli: the script itself on macOS and Linux; on Windows npm's shim
+  // beside it, which Tars reads through only to a .js script, hence the .cjs there.
+  const cli = writeNodeCli(path.join(bin, process.platform === 'win32' ? 'claude.cjs' : 'claude'), [
     "const fs = require('fs'), path = require('path');",
     `fs.appendFileSync(${JSON.stringify(seen)}, JSON.stringify({ id: process.env.CLAUDE_AGENT_ID, TMPDIR: process.env.TMPDIR, CLAUDE_CODE_TMPDIR: process.env.CLAUDE_CODE_TMPDIR }) + '\\n');`,
     "if (process.env.TMPDIR) fs.writeFileSync(path.join(process.env.TMPDIR, 'scratch-' + Date.now() + '.txt'), 'kept');",
     "process.stdout.write('stand-in ready\\n');",
     'process.stdin.resume();',
     '',
-  ].join('\n'), { mode: 0o755 });
+  ].join('\n'));
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([{
     id: 'worker', name: 'Worker', character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: cli, createdAt: '2026-10-01T08:00:00.000Z', lastActivity: '2026-10-01T08:00:00.000Z',
@@ -109,7 +109,8 @@ test("an agent's CLI gets a temporary folder under ~/.dorothy/tmp that outlives 
 
   expect(first).toEqual({ id: 'worker', TMPDIR: expectedT, CLAUDE_CODE_TMPDIR: expectedC });
   expect(second).toEqual(first);
-  expect(modes).toEqual(['700', '700', '700']);
+  // POSIX mode bits, which Windows has none of: Node reads 666 for any folder there (measured).
+  if (process.platform !== 'win32') expect(modes).toEqual(['700', '700', '700']);
   expect(firstScratch).toHaveLength(1);
   expect(values.scratchAfterRelaunch).toEqual(expect.arrayContaining(firstScratch));
   expect(values.deletedAgentFolder).toBe(false);
