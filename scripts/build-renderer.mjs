@@ -19,7 +19,10 @@
  * shell did, it is where the shell lost work without a word:
  *   - an interrupted build (Ctrl+C, SIGTERM, a closed terminal) puts them back
  *     only once next build has stopped, and on POSIX a signal sent to this
- *     process alone is passed on to next build, which the shell left running;
+ *     process alone is passed on to next build, which the shell left running.
+ *     On Windows a next build the Ctrl+C did not reach, started just after it
+ *     was pressed, is stopped with its workers if it has not stopped by itself
+ *     5 s later;
  *   - a backup left by a build killed outright (SIGKILL: nothing can put it
  *     back) stops the build before anything moves. The shell moved
  *     src/app/api inside it;
@@ -29,7 +32,7 @@
  * Tested in __tests__/scripts/build-renderer.test.ts.
  */
 
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { constants } from 'node:os';
@@ -45,6 +48,22 @@ const ASIDE = [
 const RECOVER = 'OPERATIONS.md, "Build the renderer for packaging", says how to put things back by hand';
 
 const log = message => process.stderr.write(`build:renderer: ${message}\n`);
+
+/** How long next build has, on Windows, to stop by itself after a Ctrl+C before it is stopped. */
+const WINDOWS_GRACE_MS = 5_000;
+
+/**
+ * Ends `pid` and every process under it, on Windows: child.kill would be a
+ * TerminateProcess of next build alone, which leaves its workers running.
+ * taskkill by its full path, under a SystemRoot that is a real folder.
+ */
+function endTree(pid) {
+  const root = process.env.SystemRoot;
+  const windows = root && path.win32.isAbsolute(root) ? root : 'C:\\Windows';
+  execFile(path.win32.join(windows, 'System32', 'taskkill.exe'), ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, err => {
+    if (err) log(`could not stop next build (${err.message}): it may still be running`);
+  });
+}
 
 /** `next build`, as `npm run` would start it: this checkout's next, by the node running this script. */
 export function nextBuild() {
@@ -67,11 +86,19 @@ export async function buildRenderer({ root = process.cwd(), build = nextBuild(),
   // and its restore. On POSIX a signal can be meant for this process alone (a
   // kill, a parent tool), so it is passed on and next build stops. On Windows,
   // Ctrl+C, Ctrl+Break and closing the console reach every process of the
-  // console, next build included, and child.kill would be a TerminateProcess
-  // that leaves next's workers behind: there is nothing to pass on.
+  // console, next build included, unless it was pressed before next build was
+  // in the console: this process hears of it only once its moves are done and
+  // next build has started, and next build never does. So next build is given
+  // a moment to stop by itself, then stopped with its workers. One that came
+  // before next build was started keeps it from starting at all.
   const signals = platform === 'win32' ? ['SIGINT', 'SIGBREAK', 'SIGHUP'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  let interrupted = null;
+  let stopping;
   const onSignal = signal => {
-    if (platform !== 'win32' && child && child.exitCode === null && child.signalCode === null) child.kill(signal);
+    interrupted ??= signal;
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    if (platform !== 'win32') child.kill(signal);
+    else stopping ??= setTimeout(() => endTree(child.pid), WINDOWS_GRACE_MS);
   };
   for (const signal of signals) process.on(signal, onSignal);
 
@@ -95,6 +122,7 @@ export async function buildRenderer({ root = process.cwd(), build = nextBuild(),
         fs.renameSync(at(from), at(to));
         moved.push({ from, to });
       }
+      if (interrupted) return { code: null, signal: interrupted };
       return new Promise(resolve => {
         child = spawn(build.command, build.args, { cwd: root, stdio: 'inherit', env: { ...process.env, ELECTRON_BUILD: '1' } });
         child.once('error', err => {
@@ -108,6 +136,7 @@ export async function buildRenderer({ root = process.cwd(), build = nextBuild(),
     log(err.message);
     result = { code: 1, signal: null };
   }
+  clearTimeout(stopping);
 
   let restored = true;
   for (const { from, to } of moved) {

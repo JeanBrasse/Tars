@@ -25,6 +25,7 @@ import { nextBuild } from '../../scripts/build-renderer.mjs';
  *     read as 0 or replaced by another;
  *  4. not put back when the build is interrupted: SIGINT, SIGTERM or SIGHUP on
  *     POSIX, Ctrl+C on Windows; or the script dying while next build still runs;
+ *     or, on Windows, a next build the Ctrl+C never reached left to run to its end;
  *  5. what comes back not what went away: a file changed, a folder nested;
  *  6. .next and out of an earlier build left for next build to mix in;
  *  7. next build run without ELECTRON_BUILD=1, elsewhere than the checkout, with
@@ -60,6 +61,8 @@ fs.writeFileSync(process.env.FAKE_SAW, JSON.stringify({
 const mode = process.env.FAKE_MODE;
 if (mode === 'recreate') { fs.mkdirSync('src/app/api/other', { recursive: true }); fs.writeFileSync('src/app/api/other/route.ts', 'x'); process.exit(0); }
 if (mode === 'wait') { fs.writeFileSync(process.env.FAKE_SAW + '.ready', ''); setInterval(() => {}, 1000); }
+// A next build the Ctrl+C never reached: one started just after it was pressed.
+else if (mode === 'deaf') { process.on('SIGINT', () => {}); process.on('SIGBREAK', () => {}); fs.writeFileSync(process.env.FAKE_SAW + '.ready', String(process.pid)); setInterval(() => {}, 1000); }
 else process.exit(Number(mode));
 `;
 
@@ -223,6 +226,30 @@ describe.concurrent('npm run build:renderer', { timeout: 60_000 }, () => {
     expect(out).toMatch(/EXIT=-?\d+/);
     expect(out).not.toContain('EXIT=0');
   });
+
+  it.runIf(process.platform === 'win32')('stops a next build the Ctrl+C never reached, and puts them back', async ({ expect }) => {
+    // A Ctrl+C pressed while the script moves things aside reaches the console
+    // before next build is in it, and the script only hears of it once next
+    // build has started: next build never sees it, and the script, which
+    // catches it, waited for the whole build to end.
+    const c = checkout({ mode: 'deaf' });
+    const helper = path.join(path.dirname(c.root), 'ctrl-c.ps1');
+    fs.writeFileSync(helper, CTRL_C_HELPER);
+    const pid = () => Number(fs.existsSync(c.ready) ? fs.readFileSync(c.ready, 'utf8') : 0);
+    try {
+      const out = await new Promise<string>((resolve, reject) => {
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper, process.execPath, c.run, c.root, c.ready],
+          { encoding: 'utf8', timeout: 50_000 }, (error, stdout, stderr) => (error ? reject(new Error(`${error.message}\n${stdout}\n${stderr}`)) : resolve(stdout)));
+      });
+
+      expectPutBack(c);
+      expect(out).toMatch(/EXIT=-?\d+/);
+      expect(out).not.toContain('EXIT=0');
+      expect(() => process.kill(pid(), 0), 'next build was left running').toThrow();
+    } finally {
+      try { process.kill(pid()); } catch { /* gone, as it should be */ }
+    }
+  });
 });
 
 describe('the next build it runs by default', () => {
@@ -291,6 +318,11 @@ public static class TarsConsole {
   [DllImport("kernel32.dll", SetLastError = true)] public static extern bool GenerateConsoleCtrlEvent(uint ctrlEvent, uint group);
 }
 '@
+# A parent that ignores Ctrl+C (a shell that started this one in a process
+# group of its own) hands that on to every process it starts, and the script
+# would never see the Ctrl+C below: Ctrl+C is handled again here first, and the
+# script inherits that instead.
+[void][TarsConsole]::SetConsoleCtrlHandler([IntPtr]::Zero, $false)
 $p = Start-Process -FilePath $Node -ArgumentList ('"' + $Run + '"') -WorkingDirectory $Root -WindowStyle Hidden -PassThru
 $null = $p.Handle
 $deadline = (Get-Date).AddSeconds(30)

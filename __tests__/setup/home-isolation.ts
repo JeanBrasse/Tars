@@ -69,7 +69,10 @@ function isNamedPipe(target: string): boolean {
 type HomeGuard = {
   /** HOME as the run found it, before this file replaced it. */
   originalHome: string | undefined;
-  /** On Windows, the profile variables as the run found them. Empty elsewhere. */
+  /**
+   * The profile variables as the run found them: on Windows all of them, and
+   * elsewhere USERPROFILE alone, which the suite has always moved with HOME.
+   */
   originalProfile: Record<string, string | undefined>;
   /** The account's home directory, which no environment variable can move. */
   accountHome: string;
@@ -128,7 +131,7 @@ function accountHome(): string {
 const firstRun = !globals[KEY];
 const guard: HomeGuard = globals[KEY] ?? {
   originalHome: process.env.HOME,
-  originalProfile: onWindows ? Object.fromEntries(PROFILE_VARIABLES.map(key => [key, process.env[key]])) : {},
+  originalProfile: Object.fromEntries((onWindows ? [...PROFILE_VARIABLES] : ['USERPROFILE']).map(key => [key, process.env[key]])),
   accountHome: accountHome(),
   throwawayHome: '',
   protectedRoots: [],
@@ -144,7 +147,8 @@ globals[KEY] = guard;
 
 if (firstRun) {
   const { USERPROFILE, APPDATA, LOCALAPPDATA } = guard.originalProfile;
-  for (const home of [guard.originalHome, guard.accountHome, USERPROFILE, APPDATA, LOCALAPPDATA]) {
+  const profile = onWindows ? [USERPROFILE, APPDATA, LOCALAPPDATA] : [];
+  for (const home of [guard.originalHome, guard.accountHome, ...profile]) {
     if (home) guard.protect(home);
   }
 }
@@ -154,14 +158,18 @@ guard.throwawayHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-home-')
 // (C:\Users\<you>\AppData\Local\Temp), so without it every mkdtemp of the
 // suite read as a write into the real home (the first Windows run, 01/10:
 // about 300 of 340 failing files). Elsewhere it is outside the home anyway.
-// The run's folder, which holds the file's own (tmpdir-isolation.ts hands it
-// over): a write past the file's folder is for the run's guard to report
-// (tmpdir-run.ts), as on macOS and Linux, and on Windows this guard refused
-// it first, as a write into the real home (tmpdir-isolation.test.ts, 7).
-const runTmpdir = (globalThis as typeof globalThis & { [key: symbol]: string | undefined })[Symbol.for('tars.test.runTmpdir')] ?? os.tmpdir();
+// On Windows, the run's folder, which holds the file's own (tmpdir-isolation.ts
+// hands it over): a write past the file's folder is for the run's guard to
+// report (tmpdir-run.ts), as on macOS and Linux, and this guard refused it
+// first there, as a write into the real home (tmpdir-isolation.test.ts, 7).
+// macOS and Linux keep the file's own folder, as before.
+const runTmpdir = onWindows
+  ? (globalThis as typeof globalThis & { [key: symbol]: string | undefined })[Symbol.for('tars.test.runTmpdir')] ?? os.tmpdir()
+  : os.tmpdir();
 guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome), canonical(runTmpdir)];
-// HOME, and on Windows the variables that name the profile: test-home.ts's list.
-const moved = homeVariables(guard.throwawayHome);
+// HOME, and on Windows the variables that name the profile (test-home.ts's
+// list). USERPROFILE everywhere, as the suite has always moved it.
+const moved = { USERPROFILE: guard.throwawayHome, ...homeVariables(guard.throwawayHome) };
 for (const dir of [moved.APPDATA, moved.LOCALAPPDATA]) if (dir) fs.mkdirSync(dir, { recursive: true });
 Object.assign(process.env, moved);
 
@@ -183,7 +191,7 @@ function violationAt(value: unknown): string | undefined {
   // file under any home, and resolving one opens it: realpath took the pipe's
   // only connection, and node-pty's own open then failed with EBUSY. One that
   // climbs out with `..` is a file, and is checked as one.
-  if (isNamedPipe(target)) return undefined;
+  if (onWindows && isNamedPipe(target)) return undefined;
   const resolved = canonical(target);
   const guarded = closest(resolved, guard.protectedRoots);
   if (guarded < 0) return undefined;
