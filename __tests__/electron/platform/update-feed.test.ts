@@ -21,7 +21,9 @@ import { installerAssetFor, offersUpdate } from '../../../electron/platform/upda
  *  - a release that carries no Windows installer yet offered on win32, which
  *    sends the user to a page with nothing to install;
  *  - darwin and linux no longer get the .dmg first, then the .zip, or no
- *    longer get every newer release offered.
+ *    longer get every newer release offered;
+ *  - darwin and linux, on a release with no .dmg, offered the Windows zip
+ *    listed beside the macOS one.
  */
 
 const ROOT = path.join(__dirname, '..', '..', '..');
@@ -65,11 +67,19 @@ describe('which asset is offered', () => {
     expect(installerAssetFor(release, 'linux', 'x64')?.name).toBe('Tars-1.9.6-arm64.dmg');
   });
 
-  it('names the installer the way package.json has electron-builder name it, so win32 finds it', () => {
+  it('darwin and linux: with no .dmg, the macOS zip, never the Windows zip listed beside it', () => {
+    const windowsFirst = [asset('Tars-Windows-1.9.6-x64.zip'), asset('Tars-1.9.6-arm64-mac.zip'), asset('Tars-Setup-1.9.6.exe')];
+    expect(installerAssetFor(windowsFirst, 'darwin', 'arm64')?.name).toBe('Tars-1.9.6-arm64-mac.zip');
+    expect(installerAssetFor(windowsFirst, 'linux', 'x64')?.name).toBe('Tars-1.9.6-arm64-mac.zip');
+    expect(installerAssetFor([asset('Tars-Windows-1.9.6-x64.zip'), asset('Tars-Setup-1.9.6.exe')], 'darwin', 'arm64')).toBeUndefined();
+  });
+
+  it('names the installer and the zip the way package.json has electron-builder name them, so each platform takes its own', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     const named = String(pkg.build.nsis.artifactName).replace('${version}', '1.9.6').replace('${ext}', 'exe');
     const zip = String(pkg.build.win.artifactName).replace('${version}', '1.9.6').replace('${arch}', 'x64').replace('${ext}', 'zip');
     expect(installerAssetFor([asset(zip), asset(named)], 'win32', 'x64')?.name).toBe(named);
+    expect(installerAssetFor([asset(zip), asset(named)], 'darwin', 'arm64')).toBeUndefined();
   });
 });
 

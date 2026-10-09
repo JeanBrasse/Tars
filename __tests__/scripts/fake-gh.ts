@@ -42,6 +42,13 @@ export type FakeGhState = {
    * latest-mac.yml or latest.yml, the tag of /releases/latest.
    */
   serve?: { target?: string; digests?: Record<string, string>; manifest?: string; latest?: string };
+  /**
+   * What `serve` becomes once the first `release upload` has gone through: a
+   * GitHub that changes under a release between its upload and its read-back.
+   */
+  serveAfterUpload?: { target?: string; digests?: Record<string, string>; manifest?: string; latest?: string };
+  /** Every tag is an annotated tag object, which `git/tags/<sha>` resolves to its commit. */
+  annotatedTags?: boolean;
 };
 
 const SCRIPT = `
@@ -111,6 +118,10 @@ if (cmd === 'release' && sub === 'upload') {
     release.assets = release.assets.filter(a => a.name !== path.basename(file));
     release.assets.push({ name: path.basename(file), size: bytes.length, digest: 'sha256:' + crypto.createHash('sha256').update(bytes).digest('hex'), state: 'uploaded' });
   }
+  if (state.serveAfterUpload) {
+    state.serve = state.serveAfterUpload;
+    delete state.serveAfterUpload;
+  }
   fs.writeFileSync(process.env.FAKE_GH_STATE, JSON.stringify(state));
   process.exit(0);
 }
@@ -131,10 +142,17 @@ if (cmd === 'api') {
   if (ref) {
     const release = state.releases && state.releases[ref[1]];
     if ((state.tags || []).includes(ref[1]) || release) {
-      process.stdout.write(JSON.stringify({ object: { type: 'commit', sha: serve.target || (release && release.target) || '0'.repeat(40) } }));
+      const commit = serve.target || (release && release.target) || '0'.repeat(40);
+      const object = state.annotatedTags ? { type: 'tag', sha: 'tag-object-of-' + commit } : { type: 'commit', sha: commit };
+      process.stdout.write(JSON.stringify({ object }));
       process.exit(0);
     }
     fail('gh: Not Found (HTTP 404)', 1);
+  }
+  const tagObject = /^repos\\/[^/]+\\/[^/]+\\/git\\/tags\\/tag-object-of-(.+)$/.exec(args[1] || '');
+  if (tagObject && state.annotatedTags) {
+    process.stdout.write(JSON.stringify({ object: { type: 'commit', sha: tagObject[1] } }));
+    process.exit(0);
   }
   if (/^repos\\/[^/]+\\/[^/]+\\/releases\\/latest$/.test(args[1] || '')) {
     process.stdout.write(JSON.stringify({ tag_name: serve.latest || state.latest }));

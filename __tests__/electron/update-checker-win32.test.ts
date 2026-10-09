@@ -13,7 +13,8 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vites
  *  - the fallback asks another repository than GITHUB_REPO;
  *  - a .dmg or a .zip is offered on win32, or the wrong architecture's installer;
  *  - a newer release that carries no Windows installer yet is offered, which
- *    sends the user to a page with nothing to install;
+ *    sends the user to a page with nothing to install, or reported as the
+ *    latest version when it cannot be installed here;
  *  - the versions stop comparing as they do on macOS: a newer one read as not
  *    newer, or an older one as newer.
  * The decisions themselves are tested one by one in platform/update-feed.test.ts;
@@ -92,11 +93,11 @@ describe('the fallback on Windows', () => {
     });
   });
 
-  it('offers no update, never a .dmg, while the release carries only the macOS files', async () => {
+  it('offers no update, never a .dmg, while the release carries only the macOS files, and names the version installed as the latest it can get', async () => {
     const { result, channel, info } = await fallback({ tag_name: 'v1.9.7', assets: MAC_FILES });
     expect(result).toEqual({ devMode: false, fallback: true });
     expect(channel).toBe('app:update-not-available');
-    expect(info).toEqual({ currentVersion: '1.9.6', latestVersion: '1.9.7' });
+    expect(info).toEqual({ currentVersion: '1.9.6', latestVersion: '1.9.6' });
   });
 
   it.each([

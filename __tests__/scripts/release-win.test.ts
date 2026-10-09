@@ -37,7 +37,12 @@ import { Refusal } from '../../scripts/release.mjs';
  *    tag is on another commit than the one built, to one that is no longer the
  *    latest, over Windows files already there, or as a release of their own;
  *    latest.yml uploaded before the installer it names; a GitHub it cannot ask
- *    taken for a pass; what GitHub serves not read back.
+ *    taken for a pass; what GitHub serves not read back (the installer's
+ *    digest, the tag, the latest release), or an annotated tag not followed to
+ *    its commit;
+ *  - GitHub changing during the minutes of the build (a newer release, a
+ *    Windows file, the tag moved) and the upload going ahead regardless;
+ *  - npm not found to run the build reported as a crash rather than a refusal.
  * No test runs electron-builder or reaches GitHub: the build is a function that
  * lays files out, and gh is the fake.
  */
@@ -341,17 +346,25 @@ describe('npm run release:win', { timeout: 60_000 }, () => {
   let roots: string[];
   let built: { version: string; env: Record<string, string | undefined>; config: unknown }[];
 
+  /** What GitHub does while the build runs, which takes minutes for real. */
+  let duringBuild: (() => void) | undefined;
+
   /** The build: records what it was asked, and lays out a consistent build of the checkout's version. */
   const build = async (_steps: { args: string[] }[], { root, env }: { root: string; env: Record<string, string | undefined> }) => {
     const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
     const config = JSON.parse(fs.readFileSync(path.join(root, 'build', 'electron-builder-win.json'), 'utf8'));
     built.push({ version, env, config });
     winBuild(path.join(root, 'release'), version);
+    duringBuild?.();
   };
 
   async function releaseWin(cwd: string, ...argv: string[]) {
+    return releaseWinWith(cwd, argv, {});
+  }
+
+  async function releaseWinWith(cwd: string, argv: string[], deps: { npmCommand?: () => never }) {
     const lines: string[] = [];
-    const code = await main(argv, { cwd, log: (line: string) => lines.push(line), build });
+    const code = await main(argv, { cwd, log: (line: string) => lines.push(line), build, ...deps });
     return { code, out: lines.join('\n') };
   }
 
@@ -362,6 +375,7 @@ describe('npm run release:win', { timeout: 60_000 }, () => {
     gh.install();
     roots = [];
     built = [];
+    duringBuild = undefined;
   });
   afterEach(() => {
     gh.uninstall();
@@ -492,5 +506,86 @@ describe('npm run release:win', { timeout: 60_000 }, () => {
 
     expect(code).toBe(1);
     expect(out).toContain('the latest.yml GitHub serves is not the one checked');
+  });
+
+  it.each<[string, (head: string) => FakeGhState, RegExp]>([
+    ['the installer with other bytes', head => releasedOnMac(head, { serve: { digests: { [`Tars-Setup-${VERSION}.exe`]: sha256('other bytes') } } }),
+      /GitHub serves Tars-Setup-1\.9\.6\.exe with sha256:[0-9a-f]+, the local file is sha256:/],
+    ['its tag on another commit once uploaded', head => releasedOnMac(head, { serveAfterUpload: { target: 'f'.repeat(40) } }),
+      /v1\.9\.6 points at f{40}, not at the commit built/],
+    ['another release as the latest once uploaded', head => releasedOnMac(head, { serveAfterUpload: { latest: 'v1.9.7' } }),
+      /\/releases\/latest is v1\.9\.7, not v1\.9\.6/],
+  ])('stops, once uploaded, on GitHub serving %s', async (_what, state, message) => {
+    const { dir, head } = co();
+    gh.setState(state(head));
+    gh.allowPublishing();
+
+    const { code, out } = await releaseWin(dir);
+
+    expect(code).toBe(1);
+    expect(out).toMatch(message);
+    expect(out).not.toContain('GitHub serves exactly what was built');
+    expect(writes().map(args => args.slice(0, 3))).toEqual([['release', 'upload', `v${VERSION}`], ['release', 'upload', `v${VERSION}`]]);
+  });
+
+  it.each<[string, (state: FakeGhState) => void, RegExp]>([
+    ['a newer release made the latest', state => {
+      state.releases!['v1.9.7'] = { assets: [] };
+      state.latest = 'v1.9.7';
+    }, /the latest release on acme\/tars is v1\.9\.7, not v1\.9\.6/],
+    ['a Windows file added to the release', state => {
+      state.releases![`v${VERSION}`].assets.push({ name: 'latest.yml', size: 1, digest: sha256('w') });
+    }, /already carries latest\.yml/],
+    ['its tag moved to another commit', state => {
+      state.serve = { target: 'e'.repeat(40) };
+    }, /v1\.9\.6 points at e{40}, not at HEAD/],
+  ])('checks GitHub again once built, and uploads nothing when meanwhile %s', async (_what, change, message) => {
+    const { dir, head } = co();
+    gh.setState(releasedOnMac(head));
+    gh.allowPublishing();
+    duringBuild = () => {
+      const state = gh.state();
+      change(state);
+      gh.setState(state);
+    };
+
+    const { code, out } = await releaseWin(dir);
+
+    expect(code).toBe(1);
+    expect(out).toMatch(message);
+    expect(built).toHaveLength(1);
+    expect(writes()).toEqual([]);
+  });
+
+  it('follows an annotated tag to its commit, before the build and after the upload', async () => {
+    const onHead = co();
+    gh.setState(releasedOnMac(onHead.head, { annotatedTags: true }));
+    gh.allowPublishing();
+    const passed = await releaseWin(onHead.dir);
+    expect(passed.out).toContain('GitHub serves exactly what was built');
+    expect(passed.code).toBe(0);
+    expect(gh.calls().filter(args => args[0] === 'api' && /\/git\/tags\//.test(args[1])).length).toBeGreaterThanOrEqual(2);
+
+    const elsewhere = co();
+    gh.setState(releasedOnMac('d'.repeat(40), { annotatedTags: true }));
+    const refused = await releaseWin(elsewhere.dir);
+    expect(refused.code).toBe(1);
+    expect(refused.out).toMatch(/v1\.9\.6 points at d{40}, not at HEAD/);
+  });
+
+  it('says why it stopped, and builds nothing, when npm cannot be found to run the build', async () => {
+    const { dir, head } = co();
+    gh.setState(releasedOnMac(head));
+    gh.allowPublishing();
+    const npmCommand = (): never => {
+      throw new Error('cannot find npm-cli.js to run npm without a shell: looked at C:\\nowhere');
+    };
+    for (const argv of [['--dry-run'], []]) {
+      const { code, out } = await releaseWinWith(dir, argv, { npmCommand });
+      expect(code).toBe(1);
+      expect(out).toContain('release:win: stopped. cannot find npm-cli.js to run npm without a shell');
+    }
+    expect(built).toEqual([]);
+    expect(writes()).toEqual([]);
   });
 });
