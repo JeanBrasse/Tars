@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * The vault does not copy the private directory back into the agents' one.
@@ -103,8 +104,11 @@ beforeAll(async () => {
   documentId = JSON.parse(created.text).document.id;
 });
 
-afterAll(() => {
+afterAll(async () => {
   api.stopApiServer();
+  // Closed before its folder goes: Windows will not delete a database file
+  // still open (EBUSY), where macOS and Linux unlink it from under the handle.
+  (await import('../../../electron/services/vault-db')).closeVaultDb();
   fs.rmSync(tmp, { recursive: true, force: true });
   fs.rmSync(privateDir, { recursive: true, force: true });
 });
@@ -171,7 +175,8 @@ describe('attaching a file to a vault document', () => {
   it('refuses the private directory reached through a symlink', async () => {
     const link = path.join(tmp, 'innocent-looking');
     fs.rmSync(link, { force: true });
-    fs.symlinkSync(privateDir, link);
+    // A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
+    fs.symlinkSync(privateDir, link, 'junction');
     secretFile();
 
     const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
@@ -217,7 +222,7 @@ describe('attaching a file to a vault document', () => {
     // must not take it.
     const exit = path.join(privateDir, 'to-the-pair');
     fs.rmSync(exit, { force: true });
-    fs.symlinkSync(tmp, exit);
+    fs.symlinkSync(tmp, exit, 'junction');
 
     try {
       for (const file of [second, copy]) {
@@ -240,7 +245,7 @@ describe('attaching a file to a vault document', () => {
    * a symlink is checked by what it opens, and that file, never the symlink,
    * is what gets copied.
    */
-  it('copies the file it checked, not the name it was given', async () => {
+  it.skipIf(cannotSymlink())('copies the file it checked, not the name it was given', async () => {
     const checked = path.join(tmp, 'checked.txt');
     fs.writeFileSync(checked, 'the file that was checked');
     const alias = path.join(tmp, 'alias-of-checked.txt');

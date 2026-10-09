@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { runCliUpdatePass, type CliUpdateContext } from '../../../electron/services/cli-updater';
+import { cannotSymlink } from '../../setup/symlink-privilege';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The scratch folders that updates could not remove, swept by a later pass.
@@ -127,17 +129,21 @@ describe('the scratch folders earlier updates could not remove', () => {
     fs.mkdirSync(elsewhere);
     fs.writeFileSync(path.join(elsewhere, 'keep'), 'keep');
     backdate(elsewhere, 120);
+    // Only where this account may make a link (symlink-privilege.ts): the rest runs everywhere.
     const link = path.join(tmp, 'tars-cli-update-p6Q7r8');
-    fs.symlinkSync(elsewhere, link);
-    backdate(link, 120);
+    const linked = !cannotSymlink();
+    if (linked) {
+      fs.symlinkSync(elsewhere, link);
+      backdate(link, 120);
+    }
 
     await pass();
 
     for (const dir of kept) expect(fs.existsSync(path.join(dir, 'npm-cache', 'index')), dir).toBe(true);
     expect(fs.readFileSync(file, 'utf8')).toBe('not a folder');
-    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    if (linked) expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(path.join(elsewhere, 'keep'), 'utf8')).toBe('keep');
-    expect(fs.statSync(elsewhere).mode & 0o777).toBe(0o755);
+    if (hasPosixModes()) expect(fs.statSync(elsewhere).mode & 0o777).toBe(0o755);
   });
 
   // Root removes it all the same, and a read-only folder on Windows still lets its children go.

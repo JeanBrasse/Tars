@@ -6,6 +6,7 @@ import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { orchestratorForMessage, whereToWrite } from './orchestrator-routing';
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses } from '../core/pty-manager';
+import { projectName } from '../platform';
 import { getMainWindow } from '../core/window-manager';
 import { getClaudeStats } from './claude-service';
 import {
@@ -187,7 +188,7 @@ const HELP =
 /** One agent: who, where, what it can do, and its task while it runs. */
 function agentLine(a: AgentStatus): string {
   let line = `${faceOrCrown(a)} **${a.name}** ${statusDot(a, DOTS)}\n`;
-  if (!isSuperAgent(a)) line += `    📁 \`${a.projectPath.split('/').pop() || 'Unknown'}\`\n`;
+  if (!isSuperAgent(a)) line += `    📁 \`${projectName(a.projectPath) || 'Unknown'}\`\n`;
   if (a.skills.length > 0) line += `    🛠 ${a.skills.slice(0, 3).join(', ')}${a.skills.length > 3 ? '...' : ''}\n`;
   if (a.currentTask && a.status === 'running') {
     line += `    💬 *${a.currentTask.slice(0, 40)}${a.currentTask.length > 40 ? '...' : ''}*\n`;

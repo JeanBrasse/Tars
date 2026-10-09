@@ -67,6 +67,7 @@ vi.mock('../../../electron/services/usage-ledger', () => ({ recordUsage: vi.fn()
 
 import { delegateOverAcp, stopAcpRuns } from '../../../electron/services/acp/delegate';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { Leftovers } from '../../setup/leftover-processes';
 
 const agent = (id: string) => ({
   id, name: id, status: 'running', projectPath: tmp, provider: 'claude', skills: [], output: [], lastActivity: new Date().toISOString(),
@@ -78,8 +79,9 @@ const until = async (what: string, test: () => boolean, ms = 10_000) => {
 };
 const pids = (file: string) => fs.readFileSync(file, 'utf-8').split(' ').map(Number);
 
-const leftovers: number[] = [];
-afterEach(() => { for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } } });
+// Ended by id only while the id is still the process the test saw: see leftover-processes.ts.
+const leftovers = new Leftovers();
+afterEach(() => leftovers.end(), 60_000);
 
 describe('a delegated run, when its agent is stopped or deleted', { timeout: 30_000 }, () => {
   it('1, 2, 3, 4. is asked to cancel, then its whole process tree goes, and its caller is told it was stopped', async () => {

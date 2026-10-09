@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { projectFolders } from './project-index';
+import { memoryProjectDirName, knownProjectsByFolder } from '../platform/claude-project-dir';
+import { unlinkRetryingSync } from '../platform/rename-replacing';
 import { spellingsOf } from '../utils/resume-session';
 
 export interface MemoryFile {
@@ -82,9 +84,9 @@ async function readMemoryFileAsync(filePath: string): Promise<MemoryFile> {
   return memoryFile(filePath, stat, content);
 }
 
-/** Claude Code's own encoding: every '/' and '.' becomes '-'. */
+/** The folder a project's memory is created in when Claude has none for it yet (platform/claude-project-dir.ts). */
 function encodeProjectPath(projectPath: string): string {
-  return projectPath.replace(/[/.]/g, '-');
+  return memoryProjectDirName(projectPath);
 }
 
 /**
@@ -95,6 +97,9 @@ function encodeProjectPath(projectPath: string): string {
 export async function listProjectMemories(extraProjectPaths: string[] = []): Promise<ProjectMemory[]> {
   const results: ProjectMemory[] = [];
   const seenPaths = new Set<string>();
+  // On Windows, a folder a known project's own name points at is that project
+  // (platform/claude-project-dir.ts); elsewhere none, each folder is decoded.
+  const knownByFolder = knownProjectsByFolder(extraProjectPaths);
   /** The rows read from the CLIs' folders, by the path each folder stands for. */
   const byPath = new Map<string, ProjectMemory>();
 
@@ -102,7 +107,7 @@ export async function listProjectMemories(extraProjectPaths: string[] = []): Pro
     // Read without blocking, each folder's path decoded once (project-index.ts).
     for (const folder of await projectFolders(projectsDir)) {
       const memoryDir = path.join(folder.dir, 'memory');
-      const decodedPath = folder.projectPath;
+      const decodedPath = knownByFolder.get(folder.name) ?? folder.projectPath;
       const projectName = getProjectName(decodedPath);
 
       const project: ProjectMemory = {
@@ -224,8 +229,8 @@ export function createMemoryFile(memoryDir: string, fileName: string, content: s
     if (!isWithinProjectsDir(memoryDir)) {
       return { success: false, error: 'Access denied' };
     }
-    // Reject path traversal in fileName
-    if (fileName.includes('/') || fileName.includes('..')) {
+    // Reject path traversal and a subdirectory in fileName (`\` separates too, on Windows)
+    if (fileName.includes('/') || fileName.includes(path.sep) || fileName.includes('..')) {
       return { success: false, error: 'Invalid file name' };
     }
     if (!fs.existsSync(memoryDir)) {
@@ -250,7 +255,7 @@ export function deleteMemoryFile(filePath: string): { success: boolean; error?: 
     if (path.basename(filePath) === 'MEMORY.md') {
       return { success: false, error: 'Cannot delete the main MEMORY.md entrypoint' };
     }
-    fs.unlinkSync(filePath);
+    unlinkRetryingSync(filePath);
     return { success: true };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Failed to delete file' };

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -44,6 +44,26 @@ vi.mock('electron', () => ({
 }));
 
 let manager: typeof import('../../../electron/core/agent-manager');
+
+/**
+ * `touch -r from to`: gives `to` the times of `from`, to the unit the disk
+ * keeps. Windows has no touch; there the tool that keeps timestamps is
+ * PowerShell, whose DateTime counts the 100 ns ticks NTFS stores, so it copies
+ * the time exactly. Node cannot stand in for either: fs.utimesSync takes the
+ * time as a double of seconds, which at today's date is coarser than 100 ns.
+ */
+function touchReference(from: string, to: string): void {
+  if (process.platform !== 'win32') {
+    execFileSync('/usr/bin/touch', ['-r', from, to]);
+    return;
+  }
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  execFileSync(powershell, [
+    '-NoProfile', '-NonInteractive', '-Command',
+    '$from = Get-Item -LiteralPath $env:TARS_TOUCH_FROM; $to = Get-Item -LiteralPath $env:TARS_TOUCH_TO; '
+      + '$to.LastWriteTimeUtc = $from.LastWriteTimeUtc; $to.LastAccessTimeUtc = $from.LastAccessTimeUtc',
+  ], { env: { ...process.env, TARS_TOUCH_FROM: from, TARS_TOUCH_TO: to }, stdio: 'pipe' });
+}
 
 function agent(id: string) {
   return {
@@ -96,6 +116,10 @@ afterEach(() => {
   manager.agents.clear();
 });
 
+afterAll(() => {
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 describe('the file the backup shortcut is allowed to skip reading', () => {
   it('is not a foreign rewrite in place of exactly the same length', () => {
     const ours = stampOf(AGENTS_FILE);
@@ -124,7 +148,7 @@ describe('the file the backup shortcut is allowed to skip reading', () => {
     // differs, and it has to be enough.
     const incoming = path.join(tmp, 'agents.json.from-elsewhere');
     fs.writeFileSync(incoming, foreign);
-    execFileSync('/usr/bin/touch', ['-r', AGENTS_FILE, incoming]);
+    touchReference(AGENTS_FILE, incoming);
     expect(
       stampOf(incoming).mtimeNs,
       'touch -r did not reproduce the nanoseconds, so the forgery this test needs did not happen',

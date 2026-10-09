@@ -34,6 +34,7 @@
  *   string all the same, and the folder the logout makes again goes to the Trash.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 
 // Every test runs the fake binary several times: 5 s is too short under the
 // fleet's load (QA, gate of #263).
@@ -149,7 +150,7 @@ afterEach(async () => {
   for (const p of loginPtys.keys()) loginPtys.delete(p);
 });
 
-describe('the contract', () => {
+describe.skipIf(claudeAccountsNotPorted())('the contract', () => {
   it('registers every channel of DESIGN-COMPTES-CLAUDE.md B6', () => {
     const expected = [
       'claude-accounts:list', 'claude-accounts:set-enabled', 'claude-accounts:set-thresholds', 'claude-accounts:add',
@@ -181,7 +182,7 @@ describe('the contract', () => {
   });
 });
 
-describe('adding and signing in', () => {
+describe.skipIf(claudeAccountsNotPorted())('adding and signing in', () => {
   it('creates, provisions and saves the account, signed out', async () => {
     const a = await add('Max two');
     expect(a.signedIn).toBe(false);
@@ -265,7 +266,7 @@ describe('adding and signing in', () => {
   });
 });
 
-describe('removing', () => {
+describe.skipIf(claudeAccountsNotPorted())('removing', () => {
   it('signs out through Claude Code, moves the directory to the trash, forgets the account and its pins', async () => {
     const a = await add('Max two');
     signIn(a.configDir!, 'two@example.com');
@@ -341,7 +342,7 @@ describe('removing', () => {
   });
 });
 
-describe('settings', () => {
+describe.skipIf(claudeAccountsNotPorted())('settings', () => {
   it('refuses to turn the option on while Claude Code signs in with one credential for every folder, and says which', async () => {
     const claudeDir = path.join(os.homedir(), '.claude');
     fs.mkdirSync(claudeDir, { recursive: true });
@@ -386,7 +387,7 @@ describe('settings', () => {
   });
 });
 
-describe('what stays in memory', () => {
+describe.skipIf(claudeAccountsNotPorted())('what stays in memory', () => {
   it('never logs what goes through the login terminal', async () => {
     const logged: string[] = [];
     const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(m => vi.spyOn(console, m).mockImplementation((...args: unknown[]) => { logged.push(args.map(String).join(' ')); }));
@@ -415,7 +416,7 @@ describe('what stays in memory', () => {
   });
 });
 
-describe('the counters', () => {
+describe.skipIf(claudeAccountsNotPorted())('the counters', () => {
   it("shows each account's 5 h and weekly counters, as its status line last left them, and drops a window that has reset", async () => {
     const a = await add('Max two');
     const now = Math.floor(Date.now() / 1000);
@@ -429,7 +430,7 @@ describe('the counters', () => {
   });
 });
 
-describe("an agent's account", () => {
+describe.skipIf(claudeAccountsNotPorted())("an agent's account", () => {
   it('asks for a restart when a pin changes and the option is on, and only then', async () => {
     const a = await add('Max two');
     agents.set('ag1', { id: 'ag1' });
@@ -455,7 +456,7 @@ describe("an agent's account", () => {
   });
 });
 
-describe('a registry that does not parse', () => {
+describe.skipIf(claudeAccountsNotPorted())('a registry that does not parse', () => {
   it('is left alone: every change is refused, and the page is told why', async () => {
     fs.mkdirSync(path.dirname(accountsFile()), { recursive: true, mode: 0o700 });
     fs.writeFileSync(accountsFile(), '{ "accounts": [ broken');
@@ -476,7 +477,7 @@ describe('a registry that does not parse', () => {
   });
 });
 
-describe('an account whose folder was deleted by hand', () => {
+describe.skipIf(claudeAccountsNotPorted())('an account whose folder was deleted by hand', () => {
   it('is signed out with the derived folder all the same, its folder made again goes to the Trash, and it is gone', async () => {
     const a = await add('Max two');
     fs.rmSync(a.configDir!, { recursive: true, force: true });
@@ -488,7 +489,7 @@ describe('an account whose folder was deleted by hand', () => {
   });
 });
 
-describe('a pin every window hears about', () => {
+describe.skipIf(claudeAccountsNotPorted())('a pin every window hears about', () => {
   it('pushes the agent\'s account and pin when it is pinned or unpinned', async () => {
     const a = await add('Max two');
     agents.set('ag1', { id: 'ag1', claudeAccountId: 'default' });
@@ -512,7 +513,7 @@ describe('a pin every window hears about', () => {
 });
 
 // QA's gate of #263: each kills a mutant the tests above let through.
-describe('what QA found the tests above let through', () => {
+describe.skipIf(claudeAccountsNotPorted())('what QA found the tests above let through', () => {
   it('removing signs out even when Claude Code could not say whether the account is signed in', async () => {
     const a = await add('Max two');
     signIn(a.configDir!, 'two@example.com');

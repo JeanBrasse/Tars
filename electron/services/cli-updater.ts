@@ -6,6 +6,11 @@ import type { AgentProvider, AppSettings } from '../types';
 import { dataPath } from '../constants';
 import { getAllProviders, getProvider } from '../providers';
 import { buildFullPath } from '../utils/path-builder';
+import { childEnv, getPath, rmRetryingSync, withPath } from '../platform';
+import {
+  classifyWindowsInstall, locateOnWindows, npmOnWindows, processesInPackage, unstartableOnWindows,
+  windowsGlobalManifest, windowsNativeVersion,
+} from './cli-updater-windows';
 
 /**
  * Keeps the agent CLIs Tars runs up to date, so a model that a CLI release adds
@@ -82,6 +87,9 @@ import { buildFullPath } from '../utils/path-builder';
  * Only an install under the home Tars runs in is touched. That is where
  * `claude update` writes, and it keeps a sandbox or a test run, whose HOME is a
  * scratch folder, away from the real CLIs.
+ *
+ * Windows lays both paths out otherwise: see cli-updater-windows.ts, which
+ * every site below calls on win32 and only there.
  */
 
 /** Claude Code's own cadence (1 800 000 ms in 2.1.280's footer), so an agent gets
@@ -144,7 +152,7 @@ interface Run {
 function runFile(file: string, args: string[], env: NodeJS.ProcessEnv, timeout: number, cwd: string): Promise<Run> {
   const started = Date.now();
   return new Promise(resolve => {
-    execFile(file, args, { env, timeout, cwd, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+    execFile(file, args, { env: childEnv(file, env), timeout, cwd, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', windowsHide: true }, (err, stdout, stderr) => {
       let code: number | string = 0;
       if (err) {
         const e = err as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };
@@ -190,6 +198,7 @@ function isExecutableFile(file: string): boolean {
 
 /** A command as a launch finds it: a path from Settings, or a name on PATH. */
 export function locate(command: string, envPath: string): string | null {
+  if (process.platform === 'win32') return locateOnWindows(command, envPath).file ?? null;
   if (path.isAbsolute(command)) return isExecutableFile(command) ? command : null;
   for (const dir of envPath.split(path.delimiter)) {
     if (!dir) continue;
@@ -220,6 +229,7 @@ type Install =
  */
 export function classifyInstall(launcher: string): Install {
   const binary = fs.realpathSync(launcher);
+  if (process.platform === 'win32') return classifyWindowsInstall(launcher, binary);
   const versions = path.dirname(binary);
   if (path.basename(versions) === 'versions' && path.basename(path.dirname(versions)) === 'claude'
     && /^\d+\.\d+\.\d+/.test(path.basename(binary))) {
@@ -274,7 +284,7 @@ async function updateNativeClaude(install: Extract<Install, { kind: 'native' }>,
   if (off) return { cli: 'claude', outcome: 'skipped', from, detail: off };
   // A path in Settings that names one version rather than the installer's
   // link: the update would move the link and every launch would stay put.
-  if (!fs.lstatSync(install.launcher).isSymbolicLink()) {
+  if (process.platform !== 'win32' && !fs.lstatSync(install.launcher).isSymbolicLink()) {
     return { cli: 'claude', outcome: 'skipped', from, detail: `${install.launcher} is one fixed version, not the link the installer moves: point Settings at ~/.local/bin/claude` };
   }
 
@@ -284,7 +294,7 @@ async function updateNativeClaude(install: Extract<Install, { kind: 'native' }>,
   // has changed before.
   let to: string | null = null;
   try {
-    to = path.basename(fs.realpathSync(install.launcher));
+    to = process.platform === 'win32' ? windowsNativeVersion(install.launcher) : path.basename(fs.realpathSync(install.launcher));
   } catch {
     // Gone mid-update: reported as a failure below.
   }
@@ -311,6 +321,7 @@ function newer(candidate: string, installed: string): boolean {
 
 /** The pids that have `file` open, a running binary included; null when it cannot be told. */
 async function processesUsing(file: string, ctx: CliUpdateContext): Promise<number[] | null> {
+  if (process.platform === 'win32') return processesInPackage(file, ctx.env, (f, a) => runFile(f, a, ctx.env, QUERY_TIMEOUT_MS, ctx.home));
   const run = await runFile('lsof', ['-t', file], ctx.env, QUERY_TIMEOUT_MS, ctx.home);
   const pids = lines(run.stdout).map(Number).filter(Number.isInteger);
   if (run.code === 0 && pids.length > 0) return pids;
@@ -333,8 +344,10 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
   // The npm beside the prefix's node, which is the pair that installed it, and
   // the prefix named outright either way.
   const binDir = path.join(install.prefix, 'bin');
-  const env = { ...ctx.env, PATH: `${binDir}${path.delimiter}${ctx.env.PATH ?? ''}`, npm_config_update_notifier: 'false' };
-  const npm = locate('npm', env.PATH);
+  const windowsNpm = process.platform === 'win32' ? npmOnWindows(install.prefix, ctx.env) : null;
+  const env = windowsNpm?.env ?? { ...ctx.env, PATH: `${binDir}${path.delimiter}${ctx.env.PATH ?? ''}`, npm_config_update_notifier: 'false' };
+  const npm = windowsNpm?.file ?? (process.platform === 'win32' ? null : locate('npm', env.PATH ?? ''));
+  const npmArgs = windowsNpm?.args ?? [];
   if (!npm) return { cli, outcome: 'failed', from, detail: `no npm found to update ${install.pkg} in ${install.prefix}` };
 
   // Everything npm fetches here goes into a cache of its own, in a scratch
@@ -349,7 +362,7 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
   try {
     // No retries: npm retries a refused connection for 70 s, past the query
     // timeout, and the log then said "exit timeout" instead of naming the network.
-    const view = await runFile(npm, ['view', install.pkg, 'version', '--prefix', install.prefix, '--cache', cache, '--fetch-retries=0'], env, QUERY_TIMEOUT_MS, ctx.home);
+    const view = await runFile(npm, [...npmArgs, 'view', install.pkg, 'version', '--prefix', install.prefix, '--cache', cache, '--fetch-retries=0'], env, QUERY_TIMEOUT_MS, ctx.home);
     const latest = lines(view.stdout).pop();
     if (view.code !== 0 || !latest) return { cli, outcome: 'failed', from, detail: `npm view ${install.pkg}: ${failure(view)}` };
     if (!newer(latest, from)) return { cli, outcome: 'unchanged', from, detail: `${install.pkg} ${latest} is the latest on npm` };
@@ -363,14 +376,14 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
     // Downloaded before anything is removed: the window in which the binary is
     // missing then lasts as long as unpacking, not as long as the network.
     const download = path.join(scratch, 'download');
-    const fetched = await runFile(npm, ['install', '--prefix', download, '--cache', cache, '--ignore-scripts', '--no-save', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, scratch);
+    const fetched = await runFile(npm, [...npmArgs, 'install', '--prefix', download, '--cache', cache, '--ignore-scripts', '--no-save', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, scratch);
     if (fetched.code !== 0) return { cli, outcome: 'failed', from, detail: `downloading ${install.pkg}@${latest}: ${failure(fetched)}` };
 
     const deferredNow = runningFor(cli, from, latest, install.binary, await processesUsing(install.binary, ctx));
     if (deferredNow) return deferredNow;
 
-    const run = await runFile(npm, ['install', '--global', '--prefix', install.prefix, '--cache', cache, '--prefer-offline', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, ctx.home);
-    const now = readJson(path.join(install.prefix, 'lib', 'node_modules', install.pkg, 'package.json'))?.version;
+    const run = await runFile(npm, [...npmArgs, 'install', '--global', '--prefix', install.prefix, '--cache', cache, '--prefer-offline', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, ctx.home);
+    const now = readJson(process.platform === 'win32' ? windowsGlobalManifest(install.prefix, install.pkg) : path.join(install.prefix, 'lib', 'node_modules', install.pkg, 'package.json'))?.version;
     const took = `${(run.ms / 1000).toFixed(1)} s`;
     if (run.code === 0 && typeof now === 'string' && now !== from) {
       return { cli, outcome: 'updated', from, to: now, detail: `npm install -g ${install.pkg}@${latest} (${took})` };
@@ -381,7 +394,7 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
     // outcome: a throw from here replaced it, and an update that went through
     // read "failed".
     try {
-      fs.rmSync(scratch, { recursive: true, force: true });
+      rmRetryingSync(scratch, { recursive: true, force: true });
     } catch (err) {
       // In the update log, which is what a user reads (the gates of #218), and
       // swept by a later pass (sweepScratch).
@@ -399,8 +412,12 @@ function runningFor(cli: string, from: string, latest: string, binary: string, r
 
 /** Update one CLI if Tars knows how to for the way it is installed. */
 export async function updateCli(cli: string, command: string, ctx: CliUpdateContext): Promise<CliUpdateResult> {
-  const launcher = locate(command, ctx.env.PATH ?? '');
-  if (!launcher) return { cli, outcome: 'skipped', detail: `not installed: ${command} not found` };
+  const envPath = getPath(ctx.env, process.platform) ?? '';
+  const launcher = locate(command, envPath);
+  if (!launcher) {
+    const why = process.platform === 'win32' ? unstartableOnWindows(command, envPath) : undefined;
+    return { cli, outcome: 'skipped', detail: why ?? `not installed: ${command} not found` };
+  }
   let install: Install;
   try {
     install = classifyInstall(launcher);
@@ -546,7 +563,7 @@ export function startCliUpdates(
     const settings = getSettings();
     const ctx: CliUpdateContext = {
       home: os.homedir(),
-      env: { ...process.env, PATH: buildFullPath() },
+      env: withPath(process.env, buildFullPath(), process.platform) as NodeJS.ProcessEnv,
       logFile: CLI_UPDATES_LOG,
       tmpDir: os.tmpdir(),
     };
@@ -568,7 +585,7 @@ export function startCliUpdates(
         return provider ? [{ cli, command: provider.resolveBinaryPath(settings), inUse: inUse.has(cli) }] : [];
       })
       // A CLI Tars does not update is only worth a line when it is there.
-      .filter(t => UPDATABLE.includes(t.cli as UpdatableCli) || locate(t.command, ctx.env.PATH ?? ''));
+      .filter(t => UPDATABLE.includes(t.cli as UpdatableCli) || locate(t.command, getPath(ctx.env, process.platform) ?? ''));
     first = false;
     passInFlight = runCliUpdatePass(targets, ctx)
       .catch(err => console.error('[cli-updates] pass failed:', err))

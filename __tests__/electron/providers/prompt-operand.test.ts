@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'node:child_process';
+import { argvReached, writeArgvPrinter } from './argv-reached';
 
 /**
  * The task has to reach the CLI as the CLI's own argument.
@@ -99,15 +100,16 @@ function parseLikeClaude(argv: string[]): Parsed {
 
 /** A binary that does nothing but say what it was given. */
 function fakeBinary(): string {
-  const file = path.join(tmpDir, 'claude-argv');
-  fs.writeFileSync(file, '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)));\n', { mode: 0o755 });
-  return file;
+  return writeArgvPrinter(path.join(tmpDir, 'claude-argv'));
 }
 
-/** The command line as a shell really splits it, not as a regex guesses it. */
+/**
+ * The command line as a shell really splits it, not as a regex guesses it. On
+ * Windows, which starts the CLI with no shell, as Tars's own launch splits it
+ * and the binary reads it back (argv-reached.ts).
+ */
 function argvOf(command: string): string[] {
-  const out = execFileSync('/bin/bash', ['-c', command], { encoding: 'utf-8' });
-  return JSON.parse(out.trim().split('\n').pop() as string) as string[];
+  return argvReached(command, tmpDir);
 }
 
 async function claudeBinaryProviders() {

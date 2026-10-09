@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The Hermes webhook secret lives where the agents are not pointed.
@@ -78,8 +79,10 @@ describe('a new install', () => {
 
     expect(secret).toMatch(/^[0-9a-f]{64}$/);
     expect(fs.readFileSync(SECRET_FILE, 'utf-8')).toBe(secret);
-    expect(fs.statSync(SECRET_FILE).mode & 0o777).toBe(0o600);
-    expect(fs.statSync(privateDir).mode & 0o777).toBe(0o700);
+    if (hasPosixModes()) {
+      expect(fs.statSync(SECRET_FILE).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(privateDir).mode & 0o777).toBe(0o700);
+    }
     // The witness that the walk reads files at all.
     fs.writeFileSync(path.join(dataDir, 'api-token'), secret.slice(0, 16));
     expect(filesHolding(dataDir, secret.slice(0, 16))).toEqual(['api-token']);
@@ -117,7 +120,7 @@ describe('an install that has it in ~/.dorothy', () => {
 
     expect(fs.existsSync(LEGACY_FILE), 'still in the directory every agent is handed').toBe(false);
     expect(fs.readFileSync(SECRET_FILE, 'utf-8')).toBe(HELD_BY_HERMES);
-    expect(fs.statSync(SECRET_FILE).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(SECRET_FILE).mode & 0o777).toBe(0o600);
     expect(isWebhookSecret(HELD_BY_HERMES), 'Hermes was locked out by the move').toBe(true);
   });
 

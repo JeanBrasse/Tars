@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+import { pinPlatform } from '../providers/win-fake-disk';
+
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
 let handlers: Map<string, (...args: unknown[]) => Promise<unknown>>;
@@ -78,8 +80,13 @@ function invokeHandler(channel: string, ...args: unknown[]): Promise<unknown> {
 
 // ── Setup ────────────────────────────────────────────────────────────────────
 
+let unpin: () => void;
+
 beforeEach(() => {
   vi.resetModules();
+  // The darwin/linux lookup: extensionless binaries, `which`, the shell line
+  // for auth status. Windows has its own, in gws-platforms.test.ts.
+  unpin = pinPlatform('darwin');
   handlers = new Map();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gws-test-'));
   existsSyncFilter = null;
@@ -91,6 +98,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  unpin();
   vi.restoreAllMocks();
   if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -122,7 +123,7 @@ afterAll(() => {
   fs.rmSync(tmpHome, { recursive: true, force: true });
 });
 
-describe('claude:getData, for the Usage page', () => {
+describe.skipIf(claudeAccountsNotPorted())('claude:getData, for the Usage page', () => {
   it('1, 4. hands every account its own 5 h and weekly counters, in the order and with the names of Settings', async () => {
     accounts();
     counters('default', [12, NOW_S + 3600], [40, NOW_S + 86_400]);

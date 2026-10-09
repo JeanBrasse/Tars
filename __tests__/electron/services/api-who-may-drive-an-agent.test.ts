@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { sid } from '../../fixtures/session-id';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * Who may start, stop, message, dispatch to, run a task on, delete and create
@@ -86,6 +87,17 @@ import * as pty from 'node-pty';
 import type { AgentStatus } from '../../../electron/types';
 import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
+
 let api: typeof import('../../../electron/services/api-server');
 let agents: typeof import('../../../electron/core/agent-manager')['agents'];
 let ptyProcesses: typeof import('../../../electron/core/pty-manager')['ptyProcesses'];
@@ -155,6 +167,11 @@ function call(
 }
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
+// The first import compiles the API server's whole module graph, as in
+// api-server-keep-alive.test.ts. The five imports below, measured on 2026-09-28
+// on 8 logical CPUs: 3.2 to 3.9 s idle, 3.4 and 5.8 s inside a full `npm test`,
+// 34 to 47 s beside 16 busy processes and 42 to 85 s beside 32. Beside 16, the
+// 10 s vitest gives a hook failed 3 runs out of 3; 120 s holds the worst here.
 beforeAll(async () => {
   port = await freePort();
   api = await import('../../../electron/services/api-server');
@@ -179,7 +196,7 @@ beforeAll(async () => {
     check();
   });
   sharedToken = api.getApiToken();
-});
+}, 120_000);
 
 afterAll(() => {
   api.stopApiServer();
@@ -544,7 +561,7 @@ describe('Hermes, the one caller published off this machine', () => {
     expect(terminal.written.join('')).not.toContain('fallback');
     expect(fs.existsSync(HERMES_SECRET_LEGACY), 'the secret is still in the directory every agent is handed').toBe(false);
     expect(fs.readFileSync(HERMES_SECRET, 'utf-8')).toBe(SECRET);
-    expect(fs.statSync(HERMES_SECRET).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(HERMES_SECRET).mode & 0o777).toBe(0o600);
   });
 
   it('once moved, a secret an older build left in ~/.dorothy opens nothing, and goes', async () => {

@@ -36,6 +36,21 @@ import { spawn, execFileSync } from 'node:child_process';
  * cleanup, and the stand-ins that ignore SIGTERM ran on for 23 minutes until
  * they were ended by hand.
  * 11. A test leaves a stand-in, or what it started, running after it ends.
+ *
+ * On win32 (audit A21, and the phase 0 run where ps was ENOENT at every quit):
+ * 12. The quit ends each run's root alone, `child.kill()`, and what runs under
+ *    it outlives Tars. There the tree is ended by taskkill /T /F run while the
+ *    quit waits (platform/kill-tree.ts), and taskkill takes the place of ps in
+ *    cases 7, 9 and 10: missing, hung, and not run at all for no run.
+ * Every case runs on every platform with the same assertions. What differs on
+ * win32: the witness that the commands are out of the naive kill's reach is
+ * their parentage rather than their group; a run cannot be made stuck with
+ * SIGSTOP, which Windows does not have, and does not need to be, since
+ * taskkill /F asks nothing of the process it ends; and a process is alive
+ * until Windows says it has exited, there being no zombie to tell apart.
+ * And 11's sweep reads the command lines from Win32_Process, ps having none
+ * there, after a case that failed only: one query takes up to 25 s on CI's
+ * runner, and a case that passed has handed its pids to the cleanup.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-quit-'));
@@ -101,30 +116,35 @@ vi.mock('../../../electron/services/mcp-orchestrator', () => ({ getMcpOrchestrat
 vi.mock('../../../electron/providers', () => ({ getProvider: () => ({ getPtyEnvVars: () => ({}) }) }));
 vi.mock('../../../electron/services/usage-ledger', () => ({ recordUsage: vi.fn() }));
 
-/** ps, as the product runs it, unless a case takes it away. */
+const onWindows = process.platform === 'win32';
+/** The tool the quit finds the tree with: ps on macOS and Linux, taskkill on Windows. */
+const treeTool = (file: string) => file === 'ps' || /[\\/]taskkill\.exe$/i.test(file);
+
+/** ps (taskkill on Windows), as the product runs it, unless a case takes it away. */
 const psBroken = { value: false };
-/** ps answers nothing until the caller's own timeout ends it. */
+/** ps (taskkill) answers nothing until the caller's own timeout ends it. */
 const psHung = { value: false };
-/** How many times the product ran ps, while counted. */
+/** How many times the product ran ps (taskkill), while counted. */
 const psRuns = { counting: false, count: 0 };
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   return {
     ...actual,
     execFile: ((file: string, ...rest: unknown[]) => {
-      if (psBroken.value && file === 'ps') {
+      if (psBroken.value && treeTool(file)) {
         const done = rest.find(r => typeof r === 'function') as ((err: Error, out: string, errOut: string) => void) | undefined;
-        setImmediate(() => done?.(Object.assign(new Error('spawn ps ENOENT'), { code: 'ENOENT' }), '', ''));
+        setImmediate(() => done?.(Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' }), '', ''));
         return {} as never;
       }
       return (actual.execFile as (...a: unknown[]) => unknown)(file, ...rest);
     }) as typeof actual.execFile,
     execFileSync: ((file: string, ...rest: unknown[]) => {
-      if (psRuns.counting && file === 'ps') psRuns.count++;
-      if (psBroken.value && file === 'ps') throw Object.assign(new Error('spawn ps ENOENT'), { code: 'ENOENT' });
-      if (psHung.value && file === 'ps') {
+      if (psRuns.counting && treeTool(file)) psRuns.count++;
+      if (psBroken.value && treeTool(file)) throw Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' });
+      if (psHung.value && treeTool(file)) {
         const options = rest.find(r => r && typeof r === 'object' && !Array.isArray(r)) as { timeout?: number } | undefined;
-        return (actual.execFileSync as (...a: unknown[]) => unknown)('sleep', ['30'], { timeout: options?.timeout ?? 30_000 });
+        // A process that answers nothing for 30 s, on any platform (Windows has no sleep).
+        return (actual.execFileSync as (...a: unknown[]) => unknown)(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { timeout: options?.timeout ?? 30_000 });
       }
       return (actual.execFileSync as (...a: unknown[]) => unknown)(file, ...rest);
     }) as typeof actual.execFileSync,
@@ -133,6 +153,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { delegateOverAcp, endAcpRunsOnQuit } from '../../../electron/services/acp/delegate';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { Leftovers } from '../../setup/leftover-processes';
 
 const agent = (id: string) => ({
   id, name: id, status: 'running', projectPath: tmp, provider: 'claude', skills: [], output: [], lastActivity: new Date().toISOString(),
@@ -140,8 +161,18 @@ const agent = (id: string) => ({
 /** Alive, and not a zombie: the test process is the fake agent's parent and
  *  cannot reap it while the quit holds the thread, as Tars cannot either. */
 const alive = (pid: number) => {
+  if (onWindows) { try { process.kill(pid, 0); return true; } catch { return false; } }
   try { return !execFileSync('ps', ['-o', 'stat=', '-p', String(pid)]).toString().trim().startsWith('Z'); } catch { return false; }
 };
+
+/** win32: each process's parent, from Win32_Process. The filter holds numbers only. */
+function parentsOf(pids: number[]): Map<number, number> {
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const filter = pids.map(pid => `ProcessId=${Math.trunc(pid)}`).join(' OR ');
+  const out = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+    `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }`]).toString();
+  return new Map(out.split(/\r?\n/).filter(Boolean).map(line => line.trim().split(' ').map(Number) as [number, number]));
+}
 const until = async (what: string, test: () => boolean, ms = 10_000) => {
   const end = Date.now() + ms;
   while (!test()) { if (Date.now() > end) throw new Error(`timed out: ${what}`); await new Promise(r => setTimeout(r, 50)); }
@@ -149,6 +180,7 @@ const until = async (what: string, test: () => boolean, ms = 10_000) => {
 
 /** The processes whose argv names this file's folder: a run's adapter, and the commands it started. */
 function startedIn(dir: string): number[] {
+  if (onWindows) return commandLinesNaming(dir);
   const ps = execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' });
   return ps.split('\n').flatMap(line => {
     const m = /^\s*(\d+)\s+(.*)$/.exec(line);
@@ -156,16 +188,31 @@ function startedIn(dir: string): number[] {
   });
 }
 
-const leftovers: number[] = [];
-afterEach(() => {
+/** win32: the processes whose command line names `dir`, from Win32_Process. */
+function commandLinesNaming(dir: string): number[] {
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const out = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+    'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }'],
+  { windowsHide: true, timeout: 60_000, maxBuffer: 64 * 1024 * 1024 }).toString();
+  return out.split(/\r?\n/).flatMap(line => {
+    const m = /^(\d+) (.*)$/.exec(line);
+    return m && m[2].includes(dir + path.sep) && Number(m[1]) !== process.pid ? [Number(m[1])] : [];
+  });
+}
+
+// Ended by id only while the id is still the process the test saw: see leftover-processes.ts.
+const leftovers = new Leftovers();
+afterEach((context) => {
   psBroken.value = false;
   psHung.value = false;
   psRuns.counting = false;
-  for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+  leftovers.end();
   // 11. Whatever the case did, and even when it failed before it read its run's
-  // pids: every process whose argv names this file's folder, by PID.
+  // pids: every process whose argv names this file's folder, by PID. On win32
+  // after a case that failed only (see the header).
+  if (onWindows && context.task.result?.state !== 'fail') return;
   for (const pid of startedIn(tmp)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-});
+}, 60_000);
 
 /** Starts a delegated run of `tag`, and never awaits it: the app quits under it. */
 async function runStarted(tag: string, stubborn: boolean) {
@@ -175,6 +222,12 @@ async function runStarted(tag: string, stubborn: boolean) {
   await until('the run started its commands', () => fs.existsSync(a.pidFile) && fs.readFileSync(a.pidFile, 'utf-8').split(' ').length === 3);
   const [adapter, command, nested] = fs.readFileSync(a.pidFile, 'utf-8').split(' ').map(Number);
   leftovers.push(adapter, command, nested);
+  if (onWindows) {
+    const parents = parentsOf([adapter, command, nested]);
+    expect(parents.get(command)).toBe(adapter);
+    expect(parents.get(nested)).toBe(command);
+    return { adapter, command, nested };
+  }
   const groupOf = (pid: number) => Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)]).toString().trim());
   expect(groupOf(command)).toBe(command);
   expect(groupOf(nested)).toBe(nested);
@@ -184,7 +237,7 @@ async function runStarted(tag: string, stubborn: boolean) {
 describe('quitting Tars with delegated runs under way', { timeout: 30_000 }, () => {
   it('1, 2, 3, 5. ends a stuck run, and what its CLI started, before the quit returns', async () => {
     const { adapter, command, nested } = await runStarted('stuck', true);
-    process.kill(adapter, 'SIGSTOP');
+    if (!onWindows) process.kill(adapter, 'SIGSTOP');
 
     const began = Date.now();
     expect(endAcpRunsOnQuit()).toBe(1);

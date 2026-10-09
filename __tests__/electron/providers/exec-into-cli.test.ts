@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'node:child_process';
+import { skipOnWindows } from '../../setup/platform-limits';
 
 /**
  * Every provider's command can be exec'd: the CLI takes the shell's place.
@@ -63,7 +64,17 @@ const parentOf = (shellCommand: string) => execFileSync('/bin/bash', ['-c', shel
   encoding: 'utf-8', env: { PATH: '/usr/bin:/bin', HOME: tmpDir },
 }).trim();
 
-describe('the command spawnAgentSession execs', () => {
+/**
+ * Windows starts no shell to exec from (decision D2): the command is read back
+ * into words and the CLI started as the terminal's own process, so the CLI
+ * leads it by construction. That launch is held by launch.test.ts and
+ * launch-call-sites.test.ts, and every provider's command reaching its binary
+ * that way by effort-flag.test.ts and prompt-operand.test.ts.
+ */
+const noShellToExecFrom = () => skipOnWindows('Windows starts the CLI with no shell to exec from (decision D2); '
+  + 'the direct launch is held by launch.test.ts and launch-call-sites.test.ts, and these run on macOS, Linux and CI');
+
+describe.skipIf(noShellToExecFrom())('the command spawnAgentSession execs', () => {
   it('replaces the shell for every provider', async () => {
     const { getAllProviders } = await import('../../../electron/providers');
     const kept: string[] = [];
