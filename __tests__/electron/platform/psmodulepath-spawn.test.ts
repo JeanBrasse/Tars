@@ -3,11 +3,10 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as nodePty from 'node-pty';
 import type * as pty from 'node-pty';
-import type { BrowserWindow } from 'electron';
-import { windowsSoundCommand, agentShell } from '../../../electron/platform';
+import { windowsSoundCommand, agentShell, resolveShell, shellArgs, childEnv } from '../../../electron/platform';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
-import { createQuickPty, writeToPty, killPty, quickPtyProcesses } from '../../../electron/core/pty-manager';
 import { killPty as endTerminal } from '../../../electron/core/pty-kill';
 import { pwsh7ModulePath, withModulePath } from './pwsh7-module-path';
 
@@ -26,8 +25,12 @@ import { pwsh7ModulePath, withModulePath } from './pwsh7-module-path';
  * 2. An agent's terminal resolved to Windows PowerShell (the shell's
  *    fallback when pwsh is absent, or the Settings picker's choice), spawned
  *    by spawnAgentPty, has no Get-Acl and no New-Object.
- * 3. The quick terminal (createQuickPty) resolved to Windows PowerShell has
+ * 3. The quick terminal (shell:startPty) resolved to Windows PowerShell has
  *    neither.
+ *
+ * Each case starts Windows PowerShell itself, named by the setting, whatever
+ * the machine has: where pwsh is installed (CI's windows-latest) it is the
+ * default shell, and a pwsh would load the planted modules and prove nothing.
  *
  * What pwsh 7 children, other children, and darwin/linux get is held by
  * child-env.test.ts (pure) and launch-call-sites.test.ts (every call site).
@@ -135,31 +138,22 @@ describe.runIf(onWindows)('Windows PowerShell 5.1 started under a PowerShell 7 p
   });
 
   it('3. the quick terminal resolved to Windows PowerShell runs Get-Acl and New-Object', async () => {
+    // As shell:startPty starts it (ipc-handlers.ts): the shell the setting
+    // names, its arguments, and the parent's environment through childEnv. That
+    // the handler composes these three is held by launch-call-sites.test.ts (12).
     const dir = scratch();
-    const saved = Object.entries(process.env).filter(([k]) => k.toLowerCase() === 'psmodulepath');
-    const polluted = pwsh7ModulePath(dir);
-    for (const [k] of saved) delete process.env[k];
-    process.env.PSModulePath = polluted;
-    let id: string | undefined;
-    try {
-      const listeners: Array<(chunk: string) => void> = [];
-      const win = {
-        isDestroyed: () => false,
-        webContents: {
-          send: (channel: string, payload: { ptyId: string; data?: string }) => {
-            if (channel === 'shell:ptyOutput' && payload.ptyId === id && payload.data) for (const l of listeners) l(payload.data);
-          },
-        },
-      } as unknown as BrowserWindow;
-      const printed = collect(onData => listeners.push(onData), RAN_ANY);
-      id = createQuickPty(dir, 200, 30, win, 'powershell');
-      const quickId = id;
-      track(quickPtyProcesses.get(quickId)!, () => killPty(quickId, true));
-      writeToPty(id, PROBE, true);
-      expect(await printed).toContain(RAN_BOTH);
-    } finally {
-      delete process.env.PSModulePath;
-      for (const [k, v] of saved) process.env[k] = v;
-    }
+    const parentEnv = withModulePath({ ...process.env } as Record<string, string | undefined>, pwsh7ModulePath(dir));
+    const shell = resolveShell({ setting: 'powershell', env: parentEnv });
+    // Windows PowerShell itself, even where pwsh is installed (the default
+    // there): a pwsh would load the planted modules and prove nothing.
+    expect(path.win32.basename(shell).toLowerCase()).toBe('powershell.exe');
+    const terminal = nodePty.spawn(shell, shellArgs(shell), {
+      name: 'xterm-256color', cols: 200, rows: 30, cwd: dir,
+      env: childEnv(shell, parentEnv) as { [key: string]: string },
+    });
+    track(terminal, () => endTerminal(terminal));
+    const printed = collect(onData => terminal.onData(onData), RAN_ANY);
+    terminal.write(PROBE);
+    expect(await printed).toContain(RAN_BOTH);
   });
 });
