@@ -50,3 +50,4 @@ export {
 export {
   hermesDesktopConfigPath, tailscaleCandidates, tasmaniaTokenPath, type TasmaniaToken,
 } from './integration-paths';
+export { installerAssetFor, offersUpdate } from './update-feed';

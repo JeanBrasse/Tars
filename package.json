@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "1.9.5",
+  "version": "1.9.6",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -142,6 +142,33 @@
           "path": "/Applications"
         }
       ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Tars-Windows-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Tars",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Tars-Setup-${version}.${ext}"
     }
   },
   "dependencies": {

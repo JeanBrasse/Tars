@@ -1,6 +1,7 @@
 import { autoUpdater, UpdateInfo } from 'electron-updater';
 import { BrowserWindow, app } from 'electron';
 import { GITHUB_REPO } from '../constants';
+import { installerAssetFor, offersUpdate } from '../platform';
 
 // Don't download until user clicks "Download"
 autoUpdater.autoDownload = false;
@@ -74,13 +75,15 @@ async function checkGitHubRelease(mainWindow: BrowserWindow | null) {
     if (na > nb) break;
   }
 
-  // Find download asset
+  // Find download asset: this platform's own, since one release carries the
+  // macOS and the Windows files side by side.
   let downloadUrl = '';
+  let installer: { name: string; browser_download_url?: string } | undefined;
   if (data.assets && Array.isArray(data.assets)) {
-    const dmgAsset = data.assets.find((a: { name: string }) => a.name.endsWith('.dmg'));
-    const zipAsset = data.assets.find((a: { name: string }) => a.name.endsWith('.zip'));
-    downloadUrl = (dmgAsset || zipAsset)?.browser_download_url || '';
+    installer = installerAssetFor<{ name: string; browser_download_url?: string }>(data.assets, process.platform, process.arch);
+    downloadUrl = installer?.browser_download_url || '';
   }
+  if (!offersUpdate(process.platform, installer)) hasUpdate = false;
 
   const info = {
     currentVersion,

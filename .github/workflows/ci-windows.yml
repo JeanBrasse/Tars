@@ -1,0 +1,156 @@
+name: CI - Windows
+
+# Tars for Windows, checked on windows-latest beside the ubuntu job of ci.yml:
+# both type checks, both lints, the dash check, the E2E coverage guard and the
+# unit tests, then the E2E suite driving the real app against
+# e2e/__screenshots__/win32/. A file of its own, so ci.yml is left as it is.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Checks and unit tests (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      # The repo has no .gitattributes, and the runner's git converts to CRLF by
+      # default: the .sh hooks and the tests that read them are LF-sensitive.
+      # Must run before the checkout, which is when the files are written.
+      - name: Keep line endings and long paths as committed
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git config --global core.longpaths true
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      # npm test runs the tars-relay plugin's own tests through Python 3.9 or
+      # later; on Windows the runner's Python answers to python and py -3.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # One command per step: pwsh on the runner exits with the step's last
+      # native exit code only, so a chain would hide an earlier failure.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check (renderer)
+        run: npx tsc --noEmit
+
+      - name: Type check and build (main process)
+        run: npx tsc -p electron/tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Design lint
+        run: npm run lint:design
+
+      - name: No em or en dashes
+        run: npm run check:dashes
+
+      - name: E2E coverage guard
+        run: npm run e2e:guard
+
+      # The harness (__tests__/setup) moves HOME, USERPROFILE and APPDATA into a
+      # run directory. The runner's account may create symlinks, so the tests
+      # that skip without that privilege on a workstation run here.
+      - name: Run tests
+        run: npm test
+
+  e2e:
+    name: E2E (windows-latest)
+    needs: unit
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Keep line endings and long paths as committed
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git config --global core.longpaths true
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # npm ci leaves the Electron binary to its first use; fetched up front,
+      # three tries, as ci.yml does: GitHub has answered that download 500 or 503.
+      - name: Install the Electron binary
+        shell: bash
+        run: |
+          for try in 1 2 3; do
+            npx install-electron && exit 0
+            echo "Electron's download failed (try $try of 3), trying again in 30 s"
+            sleep 30
+          done
+          exit 1
+
+      # Nothing in the E2E path compiles the main process (OPERATIONS.md).
+      - name: Build the main process
+        run: npx tsc -p electron/tsconfig.json
+
+      # The runner's display is 1024x768; the specs that capture and click the
+      # real screen need their window on it (.github/scripts/display-resolution.ps1).
+      - name: A 1920x1080 display
+        shell: pwsh
+        run: ./.github/scripts/display-resolution.ps1 -Width 1920 -Height 1080
+
+      # E2E_TRACE=on: each spec keeps the app's own trace (app-trace.zip, its
+      # pages, DOM and screenshots) beside its artefacts, uploaded on failure.
+      - name: Run E2E
+        env:
+          E2E_TRACE: 'on'
+        run: npx playwright test
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-windows
+          path: e2e/report/
+          retention-days: 14
+
+      - name: Upload the run artefacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-runs-windows
+          path: test-results/runs/**
+          retention-days: 14
