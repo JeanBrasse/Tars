@@ -256,16 +256,19 @@ export function passWheelToProgram(term: Terminal, send: (data: string) => void)
  *
  * @param term     - The xterm Terminal instance
  * @param sendFn   - Callback that forwards the escape sequence to the PTY/agent
+ * @param hasPanel - Whether a Dashboard panel answers this index (Windows'
+ *                   Alt+digit); none by default, so the key stays the program's
  */
 export function attachShiftEnterHandler(
   term: Terminal,
   sendFn: (data: string) => void,
+  hasPanel?: (index: number) => boolean,
 ): void {
   const platform = rendererPlatform();
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true;
 
-    switch (terminalKeyAction(event, platform, term.hasSelection())) {
+    switch (terminalKeyAction(event, platform, term.hasSelection(), hasPanel)) {
       case 'newline':
         // Use bracket paste mode to insert a literal newline without submitting
         sendFn('\x1b[200~\n\x1b[201~');

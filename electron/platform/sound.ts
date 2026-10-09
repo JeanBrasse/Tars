@@ -3,6 +3,7 @@ import * as path from 'path';
 import { realFs, type Env, type FsProbe } from './fs-probe';
 import { envValue } from './path-env';
 import { childEnv } from './child-env';
+import { isPlainAbsolute } from './cli-binary';
 
 /**
  * How Windows plays a notification sound, as a program and its
@@ -43,13 +44,16 @@ const realReadLink: ReadLink = (p) => {
 
 /**
  * Whether a link (symlink or junction) on the way to `file` leads off this
- * machine: to a UNC share, `\\?\UNC\...`, a device (`\\.\...`) or
- * `\\?\GLOBALROOT`. Opening the file would contact that host, which is what
- * refusing a UNC path is for. Walked a segment at a time with lstat and
- * readlink, which never open the target, so the answer comes before anything
- * is contacted. A loop, or more than 32 links, is refused too. Known gap: a
- * drive letter mapped to a share (`net use X: \\host\share`) is not a link,
- * and `X:\a.wav` passes (Node has no drive-type query).
+ * machine: to a UNC share, `\\?\UNC\...`, a device (`\\.\...`),
+ * `\\?\GLOBALROOT`, or a target stored as an NT path (`\GLOBAL??\UNC\...`,
+ * `\Device\Mup\...`) or rooted on no drive (`\x`), which is refused rather
+ * than read as a folder of this drive. Opening the file would contact that
+ * host, which is what refusing a UNC path is for. Walked a segment at a time
+ * with lstat and readlink, which never open the target, so the answer comes
+ * before anything is contacted. A loop, or more than 32 links, is refused
+ * too. Known gap: a drive letter mapped to a share (`net use X:
+ * \\host\share`) is not a link, and `X:\a.wav` passes (Node has no
+ * drive-type query).
  */
 function linkLeavesMachine(file: string, readLink: ReadLink): boolean {
   const w = path.win32;
@@ -68,9 +72,12 @@ function linkLeavesMachine(file: string, readLink: ReadLink): boolean {
     }
     if (++hops > 32) return true;
     let target = stored.replace(/\//g, '\\');
-    const local = /^\\\\[?.]\\([A-Za-z]:(\\.*)?)$/.exec(target);
+    // A local drive however it is spelled: `\\?\C:\`, `\\.\C:\`, NT's `\??\C:\`.
+    const local = /^(?:\\\\[?.]|\\\?\?)\\([A-Za-z]:(\\.*)?)$/.exec(target);
     if (local) target = local[1];
-    if (target.startsWith('\\\\')) return true;
+    // Anything else that starts with `\`: a share, a device, or an NT path
+    // (`\GLOBAL??\UNC\...`, `\Device\Mup\...`), none of them on this drive.
+    if (target.startsWith('\\')) return true;
     const resolved = split(w.resolve(current, target));
     current = resolved.root;
     queue = [...resolved.segments, ...queue];
@@ -90,7 +97,10 @@ export function windowsSoundCommand(filePath: string, opts: { env?: Env; fs?: Fs
   }
   if (!fs.isFile(filePath)) return { ok: false, error: 'the sound file is not there' };
 
-  const systemRoot = envValue(env, 'SystemRoot', 'win32') || 'C:\\Windows';
+  // Only a plain absolute SystemRoot: a relative one would find PowerShell
+  // against the working directory.
+  const root = envValue(env, 'SystemRoot', 'win32');
+  const systemRoot = root && isPlainAbsolute(root) ? root : 'C:\\Windows';
   const file = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   return {
     ok: true,

@@ -29,6 +29,8 @@ interface UseMultiTerminalOptions {
   theme?: 'dark' | 'light';
   onTerminalReady?: (agentId: string) => void;
   broadcastMode?: boolean;
+  /** Whether a panel answers this index: Windows' Alt+digit is the panel's then, the program's otherwise. */
+  hasPanel?: (index: number) => boolean;
 }
 
 const MIN_FONT_SIZE = 8;
@@ -52,7 +54,7 @@ function safeFit(agentId: string, entry: TerminalEntry) {
   } catch {}
 }
 
-export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, theme = 'dark', onTerminalReady, broadcastMode = false }: UseMultiTerminalOptions) {
+export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, theme = 'dark', onTerminalReady, broadcastMode = false, hasPanel }: UseMultiTerminalOptions) {
   const terminalsRef = useRef<Map<string, TerminalEntry>>(new Map());
   const xtermModuleRef = useRef<{ Terminal: typeof Terminal; FitAddon: typeof FitAddon } | null>(null);
   // Keyed by container, not just agent id: a panel can unmount and remount into
@@ -64,6 +66,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   const prevInitialFontSizeRef = useRef(initialFontSize);
   const onTerminalReadyRef = useRef(onTerminalReady);
   const broadcastModeRef = useRef(broadcastMode);
+  const hasPanelRef = useRef(hasPanel);
   // The agents whose claude left fullscreen (agent.leftFullscreen, from the
   // main process's screen mirror). Their panel still holds the alternate
   // screen, so the wheel keeps being turned into reports, and the claude that
@@ -81,7 +84,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   useEffect(() => {
     onTerminalReadyRef.current = onTerminalReady;
     broadcastModeRef.current = broadcastMode;
-  }, [onTerminalReady, broadcastMode]);
+    hasPanelRef.current = hasPanel;
+  }, [onTerminalReady, broadcastMode, hasPanel]);
 
   // Load xterm modules once
   const loadModules = useCallback(async () => {
@@ -248,7 +252,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
 
       attachShiftEnterHandler(term, (data) => {
         sendOrBroadcast(data);
-      });
+      }, (index) => hasPanelRef.current?.(index) ?? false);
 
       // Forward keyboard input from xterm to PTY. The terminal's own replies to
       // queries from the CLI (DA, CPR, DSR, focus, mouse) arrive here too and
