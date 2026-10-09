@@ -4,6 +4,7 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getVaultDb, ftsSearch } from '../services/vault-db';
 import { VAULT_DIR } from '../constants';
+import { unlinkRetryingSync } from '../platform/rename-replacing';
 
 // Types
 export interface VaultFolder {
@@ -186,7 +187,7 @@ export function registerVaultHandlers(deps: VaultHandlerDependencies): void {
       for (const att of attachments) {
         try {
           if (fs.existsSync(att.filepath)) {
-            fs.unlinkSync(att.filepath);
+            unlinkRetryingSync(att.filepath);
           }
         } catch {
           // Ignore file deletion errors
@@ -260,7 +261,7 @@ export function registerVaultHandlers(deps: VaultHandlerDependencies): void {
           for (const doc of docs) {
             const attachments = db.prepare('SELECT filepath FROM attachments WHERE document_id = ?').all(doc.id) as { filepath: string }[];
             for (const att of attachments) {
-              try { if (fs.existsSync(att.filepath)) fs.unlinkSync(att.filepath); } catch { /* ignore */ }
+              try { if (fs.existsSync(att.filepath)) unlinkRetryingSync(att.filepath); } catch { /* ignore */ }
             }
           }
           db.prepare('DELETE FROM documents WHERE folder_id = ?').run(folderId);

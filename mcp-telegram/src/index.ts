@@ -58,6 +58,44 @@ const BLOCKED_NAMES = new Set([
   "credentials", "credentials.json", "id_rsa", "id_ed25519", ".pgpass",
 ]);
 
+/**
+ * Where Windows keeps credentials: under %APPDATA% and %LOCALAPPDATA%, not in
+ * home dotfiles. The same list as the app's electron/platform/credential-stores.ts
+ * (this server is built on its own); a test holds the two equal.
+ */
+const WINDOWS_ROAMING = [
+  "GitHub CLI", "gcloud", "tars", "Microsoft\\Credentials", "Microsoft\\Protect", "Microsoft\\Crypto",
+  "Microsoft\\SystemCertificates", "Microsoft\\Vault", "Mozilla", "Opera Software", "Telegram Desktop",
+  "discord", "Slack", "Signal", "Bitwarden",
+];
+const WINDOWS_LOCAL = [
+  "Microsoft\\Credentials", "Microsoft\\Vault", "Microsoft\\TokenBroker", "Microsoft\\IdentityCache",
+  "Microsoft\\OneAuth", "Google\\Chrome\\User Data", "Microsoft\\Edge\\User Data",
+  "BraveSoftware\\Brave-Browser\\User Data", "Chromium\\User Data", "Vivaldi\\User Data", "1Password",
+];
+const WINDOWS_HOME = [".azure"];
+
+export function windowsCredentialStoreDirs(home: string, env: NodeJS.ProcessEnv = process.env): string[] {
+  const w = path.win32;
+  const roaming = [env.APPDATA, w.join(home, "AppData", "Roaming")];
+  const local = [env.LOCALAPPDATA, w.join(home, "AppData", "Local")];
+  const dirs = [
+    ...roaming.filter((d): d is string => !!d).flatMap(base => WINDOWS_ROAMING.map(rel => w.join(base, rel))),
+    ...local.filter((d): d is string => !!d).flatMap(base => WINDOWS_LOCAL.map(rel => w.join(base, rel))),
+    ...WINDOWS_HOME.map(rel => w.join(home, rel)),
+  ];
+  const seen = new Set<string>();
+  return dirs.filter(d => !seen.has(d.toLowerCase()) && !!seen.add(d.toLowerCase()));
+}
+
+/** `inner` is `outer` or inside it, the way Windows compares: any case, either separator. */
+function windowsWithin(inner: string, outer: string): boolean {
+  const key = (p: string) => path.win32.normalize(p.replace(/\//g, "\\")).replace(/\\+$/, "").toLowerCase();
+  const i = key(inner);
+  const o = key(outer);
+  return i === o || i.startsWith(`${o}\\`);
+}
+
 /** `.env.local`, `.env.production` and friends are the same file with a suffix. */
 function isBlockedName(name: string): boolean {
   const lower = name.toLowerCase();
@@ -72,6 +110,13 @@ function assertSendableName(resolved: string, home: string): void {
     const blocked = path.join(home, dir);
     if (resolved === blocked || resolved.startsWith(blocked + path.sep)) {
       throw new Error(`Refused: ${dir} holds credentials and cannot be sent`);
+    }
+  }
+  if (process.platform === "win32") {
+    for (const store of windowsCredentialStoreDirs(home)) {
+      if (windowsWithin(resolved, store)) {
+        throw new Error(`Refused: ${store} holds credentials and cannot be sent`);
+      }
     }
   }
   // Every segment, not just the last: a directory called `.ssh` three levels

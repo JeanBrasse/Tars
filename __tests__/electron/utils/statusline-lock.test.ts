@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
  * The status line's token-stats lock, with several Claude sessions rendering
@@ -37,6 +38,7 @@ let script: string;
 const dirs: string[] = [];
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
@@ -64,7 +66,8 @@ function bench(name: 'git' | 'date', body: string) {
   return { home, lock, stats, render };
 }
 
-describe('the token-stats lock of the status line', () => {
+// The Node status line's side: node-statusline.test.ts.
+describe.skipIf(shHooksNotShipped())('the token-stats lock of the status line', () => {
   it('1. leaves alone, as it exits, a lock another render took after it released its own', () => {
     // git runs after the write, for the branch: the moment another render
     // takes the lock is while this one waits on it. `took` says it could:

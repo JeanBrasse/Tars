@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execFileSync } from 'child_process';
+import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import type {
   CLIProvider,
@@ -173,14 +173,16 @@ export class GrokProvider implements CLIProvider {
     // execFileSync passes argv as a structured array, so name/command/args are
     // never interpreted by a shell (no command injection).
     try {
-      execFileSync('grok', ['mcp', 'add', name, command, '--', ...args], {
+      // execCliSync resolves the name first (a grok.exe or an npm grok.cmd on Windows).
+      execCliSync('grok', ['mcp', 'add', name, command, '--', ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
       console.log(`[grok] Registered MCP server ${name} via grok mcp add`);
       return;
-    } catch {
-      // Fallback: write to config.toml manually.
+    } catch (err) {
+      // Fallback: write to config.toml manually, and say why.
+      console.warn(`[grok] grok mcp add failed (${cliFailureText(err)}), writing config.toml instead`);
     }
 
     const configPath = path.join(this.configDir, 'config.toml');
@@ -209,12 +211,13 @@ export class GrokProvider implements CLIProvider {
   async removeMcpServer(name: string): Promise<void> {
     // Try `grok mcp remove` first. execFileSync avoids shell interpolation.
     try {
-      execFileSync('grok', ['mcp', 'remove', name], {
+      execCliSync('grok', ['mcp', 'remove', name], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
-    } catch {
-      // Ignore if it doesn't exist.
+    } catch (err) {
+      // Not registered is fine; a grok that cannot be started is said.
+      if (err instanceof CliNotRunnableError) console.warn(`[grok] grok mcp remove not run: ${err.message}`);
     }
 
     // Also clean the config.toml fallback.
@@ -240,7 +243,9 @@ export class GrokProvider implements CLIProvider {
       // belongs to a *different* server section can't produce a false match.
       const sectionRegex = new RegExp(`(?:^|\\n)\\[mcp_servers\\.${escapedKey}\\]\\n[\\s\\S]*?(?=\\n\\[|$)`);
       const section = content.match(sectionRegex)?.[0];
-      return Boolean(section?.includes(expectedServerPath));
+      // The path as written, escaped by tomlString: a Windows path reads back
+      // with its backslashes doubled, and was re-registered on every boot.
+      return Boolean(section?.includes(expectedServerPath) || section?.includes(this.tomlString(expectedServerPath).slice(1, -1)));
     } catch {
       return false;
     }

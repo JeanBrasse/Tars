@@ -56,6 +56,7 @@ import type { AgentStatus } from '../../../electron/types';
 import { fallAsleep, wakeFromSleep, noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../../../electron/core/agent-asleep';
 import { consumeResumeSessionId, resetResumeTracking } from '../../../electron/utils/resume-session';
 import { launchBegins, registerAgentLauncher, resetLaunches } from '../../../electron/core/agent-launch';
+import { encodeClaudeProjectDir } from '../../../electron/platform/claude-project-dir';
 
 const SID = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
 const project = path.join(tmp, 'project');
@@ -72,7 +73,8 @@ beforeEach(() => {
   resetResumeTracking();
   resetLaunches();
   fs.mkdirSync(project, { recursive: true });
-  const transcripts = path.join(tmp, '.claude', 'projects', project.replace(/[/.]/g, '-'));
+  // Claude's own name for the folder: `/` and `.` alone leave a Windows path's `C:\` in it.
+  const transcripts = path.join(tmp, '.claude', 'projects', encodeClaudeProjectDir(project));
   fs.mkdirSync(transcripts, { recursive: true });
   fs.writeFileSync(path.join(transcripts, `${SID}.jsonl`), '{}\n');
 });

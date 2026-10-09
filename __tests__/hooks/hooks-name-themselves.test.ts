@@ -5,6 +5,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * The four shell hooks the state mod stands in for name themselves in every
@@ -81,8 +82,9 @@ describe('the four hooks the state mod stands in for', () => {
     ['stop-failure.sh', 'StopFailure', { session_id: SESSION, error: 'rate_limit', last_assistant_message: 'limit reached' }],
   ];
 
+  // Each of these runs a .sh hook in bash; 2 only reads their sources, and runs everywhere.
   for (const [script, name, input] of cases) {
-    it(`1. ${script} names itself ${name} in every post that drives the agent`, async () => {
+    it.skipIf(shHooksNotShipped())(`1. ${script} names itself ${name} in every post that drives the agent`, async () => {
       received.length = 0;
       await run(script, input);
       const posts = received.filter(r => DRIVING.test(r.path));

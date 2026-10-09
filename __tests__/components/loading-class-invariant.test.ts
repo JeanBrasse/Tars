@@ -230,7 +230,8 @@ export function scanLoadingWaits(srcRoot: string): Scan {
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8');
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-    const at = (n: ts.Node) => `${path.relative(srcRoot, file)}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
+    // The file spelled with `/` on every platform, so a finding reads the same everywhere.
+    const at = (n: ts.Node) => `${path.relative(srcRoot, file).split(path.sep).join('/')}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
     const flag = (rule: Rule, n: ts.Node, what: string) => findings.push({ rule, at: at(n), what });
 
     const branch = (b: ts.Expression | ts.Statement | undefined, site: ts.Node) => {

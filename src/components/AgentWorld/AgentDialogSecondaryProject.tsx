@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import { X, FolderOpen, FolderPlus } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 
@@ -19,7 +20,7 @@ export const AgentDialogSecondaryProject = memo(function AgentDialogSecondaryPro
   onSetSecondaryProject,
   onBrowseFolder,
 }: AgentDialogSecondaryProjectProps) {
-  const selectedProjectName = agent.secondaryProjectPath?.split('/').pop() || '';
+  const selectedProjectName = lastPathPart(agent.secondaryProjectPath ?? '');
   const unselectedProjects = availableProjects.filter(p => p.path !== agent.secondaryProjectPath);
 
   return (

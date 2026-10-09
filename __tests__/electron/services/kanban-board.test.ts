@@ -116,6 +116,23 @@ describe('1. a task an agent creates arrives parked, and never where Hermes take
     expect(inside.ok).toBe(true);
     expect(h.tasks.get(inside.ok ? inside.value.id : '')!.tenant).toBe(TARS);
   });
+
+  // Audit B W-03: `startsWith(own + '/')` and a case-sensitive `===` refused a
+  // worktree agent its own project on Windows (403), and the same project in
+  // another spelling. Written before the fix; the comparison itself is held on
+  // every platform by __tests__/electron/platform/path-compare.test.ts.
+  it.runIf(process.platform === 'win32')('on Windows, takes its worktree and any spelling of its project, and still refuses a neighbour', async () => {
+    const win: KanbanCaller = { ...dune, projectPath: 'C:\\Users\\noah\\tars' };
+    for (const asked of ['C:\\Users\\noah\\tars\\.worktrees\\p138', 'c:\\users\\noah\\TARS', 'C:/Users/noah/tars/', '\\\\?\\C:\\Users\\noah\\tars\\.worktrees\\x']) {
+      const r = await createParkedTask(h, win, { title: 'T', description: 'D', projectPath: asked });
+      expect(r.ok ? 'ok' : `${r.status} ${r.error}`, asked).toBe('ok');
+      expect(h.tasks.get(r.ok ? r.value.id : '')!.tenant).toBe(win.projectPath);
+    }
+    for (const asked of ['C:\\Users\\noah\\tars-other', 'C:\\Users\\noah\\tars\\..\\1212-capital', 'D:\\Users\\noah\\tars']) {
+      const r = await createParkedTask(h, win, { title: 'T', description: 'D', projectPath: asked });
+      expect(r.ok ? 0 : r.status, asked).toBe(403);
+    }
+  });
 });
 
 describe('2. a claim is atomic: two agents at once, one wins', () => {

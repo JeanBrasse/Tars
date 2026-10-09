@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { redactSecrets } from '../../utils/redact-secrets';
+import { homeUserName, windowsHomeSpellings } from '../../platform/home-spellings';
 
 /**
  * What an error report carries, and nothing else (Sentry, step 1; the
@@ -95,7 +96,7 @@ function scrub(value: string, machine: Machine): string {
   // /private/var on macOS, so a folder there reaches an error by either name.
   // The longer name goes first, or /private<home> would read /private~.
   if (home && home !== '/') {
-    const homes = [home, home.startsWith('/private/') ? home.slice('/private'.length) : `/private${home}`]
+    const homes = [...new Set([home, home.startsWith('/private/') ? home.slice('/private'.length) : `/private${home}`, ...windowsHomeSpellings(home)])]
       .sort((a, b) => b.length - a.length);
     for (const h of homes) {
       for (const slash of ['/', '%2F', '%252F']) {
@@ -114,7 +115,7 @@ function scrub(value: string, machine: Machine): string {
     }
   }
   if (home && home !== '/') {
-    const user = home.split('/').filter(Boolean).pop() ?? '';
+    const user = homeUserName(home);
     if (user.length >= 3) out = out.replace(new RegExp(`${NAME_START}${escape(user)}${NAME_END}`, 'gi'), '<user>');
   }
   out = out.replace(/(?:\/private)?\/var\/folders\/(?:[^/\s]+\/){1,2}T(?=\/)/g, '<tmp>');

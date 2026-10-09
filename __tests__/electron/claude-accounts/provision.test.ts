@@ -46,6 +46,7 @@
  *   to turn on while every account would in fact run on that one credential.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 
 // Every path the code under test hands to fs, while `watch.on`: a namespace
 // cannot be spied on in ESM, so the module is wrapped instead.
@@ -83,7 +84,7 @@ function readJson(file: string): Record<string, unknown> {
   return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
-describe('the directory', () => {
+describe.skipIf(claudeAccountsNotPorted())('the directory', () => {
   it('is created owner-only, under a root that is owner-only too', () => {
     provisionAccountDir(dir, home);
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
@@ -145,7 +146,7 @@ describe('the directory', () => {
   });
 });
 
-describe('what is shared through links', () => {
+describe.skipIf(claudeAccountsNotPorted())('what is shared through links', () => {
   it('links projects/ to ~/.claude/projects, creating it when it is missing', () => {
     if (fs.existsSync(path.join(claudeDir, 'projects'))) fs.rmSync(path.join(claudeDir, 'projects'), { recursive: true });
     provisionAccountDir(dir, home);
@@ -224,7 +225,7 @@ describe('what is shared through links', () => {
   });
 });
 
-describe("projects/, where an account's usage is read from", () => {
+describe.skipIf(claudeAccountsNotPorted())("projects/, where an account's usage is read from", () => {
   function accountWithProjectsFolder(): void {
     fs.mkdirSync(path.dirname(dir), { recursive: true, mode: 0o700 });
     fs.mkdirSync(path.join(dir, 'projects'), { recursive: true, mode: 0o700 });
@@ -267,7 +268,7 @@ describe("projects/, where an account's usage is read from", () => {
   });
 });
 
-describe('settings.json, a copy of ~/.claude/settings.json', () => {
+describe.skipIf(claudeAccountsNotPorted())('settings.json, a copy of ~/.claude/settings.json', () => {
   it('copies it, hooks and status line included, and again when it changes', () => {
     fs.mkdirSync(claudeDir, { recursive: true });
     const first = { hooks: { Stop: [{ hooks: [{ type: 'command', command: '/x/on-stop.sh' }] }] }, statusLine: { type: 'command', command: '/x/statusline.sh' }, skipDangerousModePermissionPrompt: true, env: { FOO: 'bar' } };
@@ -340,7 +341,7 @@ describe('settings.json, a copy of ~/.claude/settings.json', () => {
   });
 });
 
-describe(".claude.json, the account's own", () => {
+describe.skipIf(claudeAccountsNotPorted())(".claude.json, the account's own", () => {
   it('gets onboarding done, and mcpServers, theme and the bypass acceptance mirrored from ~/.claude.json', () => {
     fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
       mcpServers: { mem: { type: 'http', url: 'http://127.0.0.1:1/mcp' } },
@@ -401,7 +402,7 @@ describe(".claude.json, the account's own", () => {
   });
 });
 
-describe('credentials Claude Code would use instead of the account', () => {
+describe.skipIf(claudeAccountsNotPorted())('credentials Claude Code would use instead of the account', () => {
   const vars = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
 
   it('finds none in a plain setup', () => {
@@ -451,7 +452,7 @@ describe('credentials Claude Code would use instead of the account', () => {
   });
 });
 
-describe('credentials', () => {
+describe.skipIf(claudeAccountsNotPorted())('credentials', () => {
   it('never opens, stats or lists anything in the directory but the files it owns', () => {
     provisionAccountDir(dir, home);
     fs.writeFileSync(path.join(dir, '.credentials.json'), '{"claudeAiOauth":{"accessToken":"trap"}}', { mode: 0o600 });

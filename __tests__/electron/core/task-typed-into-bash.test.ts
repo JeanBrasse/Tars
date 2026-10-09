@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { skipOnWindows } from '../../setup/platform-limits';
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 /** A folder this test says another user owns, as lstat would report it. */
@@ -109,7 +110,13 @@ function launch(task: string): { typed: string; argv: string[] | undefined } {
   return { typed, argv };
 }
 
-describe('a task typed into bash', () => {
+/**
+ * Windows types no launch into a shell: the CLI replaces it (launchIntoTerminal,
+ * startCliInTerminal), and python's pty and /bin/bash are not there to drive one.
+ */
+const NO_TYPED_LAUNCH = 'Windows types no launch into a shell, the CLI replaces it (startCliInTerminal); python pty and /bin/bash are absent';
+
+describe.skipIf(skipOnWindows(NO_TYPED_LAUNCH))('a task typed into bash', () => {
   it('1, 4. arrives whole with a tab in it, and the line typed holds no tab', () => {
     const task = 'fix the table:\tname\tage\nthen ship';
     const { typed, argv } = launch(task);
@@ -146,7 +153,7 @@ describe('a task typed into bash', () => {
   });
 });
 
-describe('the launch folder, before it is used again', () => {
+describe.skipIf(skipOnWindows(NO_TYPED_LAUNCH))('the launch folder, before it is used again', () => {
   const folderOf = (typed: string) => path.dirname(typed.match(/'([^']+)'/)![1]);
 
   it.each([

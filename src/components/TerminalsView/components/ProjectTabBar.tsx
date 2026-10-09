@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useMemo, useState } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import { ChevronDown } from 'lucide-react';
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -82,7 +83,7 @@ function ProjectTabBar({
   const projects = useMemo(() => (
     projectPaths.map(path => ({
       path,
-      name: path.split('/').pop() || path,
+      name: lastPathPart(path) || path,
     }))
   ), [projectPaths]);
 

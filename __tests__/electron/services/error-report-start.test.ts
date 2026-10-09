@@ -81,8 +81,13 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
+/**
+ * On darwin, where Tars sends reports: a Windows build never starts them
+ * (error-report-windows-off.test.ts), and this file runs on Windows too.
+ */
 async function fresh() {
-  return (await import('../../../electron/services/error-reports')).startErrorReports;
+  const { startErrorReports: start } = await import('../../../electron/services/error-reports');
+  return (isEnabled: () => boolean) => start(isEnabled, 'darwin');
 }
 
 describe('the SDK in the main process', () => {

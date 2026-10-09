@@ -170,7 +170,10 @@ export class PiProvider implements CLIProvider {
     try {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (!config.mcpServers?.[name]) return false;
-      return JSON.stringify(config.mcpServers[name]).includes(expectedServerPath);
+      // The path as JSON writes it too: a Windows path has every backslash
+      // doubled there, never matched, and was registered again at every launch.
+      const entry = JSON.stringify(config.mcpServers[name]);
+      return entry.includes(expectedServerPath) || entry.includes(JSON.stringify(expectedServerPath).slice(1, -1));
     } catch {
       return false;
     }

@@ -10,6 +10,7 @@ import type {
   BusSystemKind,
   BusThread,
 } from '@/types/electron';
+import { pathName } from '@/lib/display-path';
 
 /**
  * What the bus means, in one place. Frames: the thread of every `Chat · A ·
@@ -391,6 +392,5 @@ export function currentThread(threads: BusThread[]): BusThread | null {
 
 export function roomProject(room: BusRoom): string {
   if (room.kind === 'global') return 'every project';
-  const parts = (room.projectPath ?? '').split('/').filter(Boolean);
-  return parts[parts.length - 1] || room.title;
+  return pathName(room.projectPath ?? '') || room.title;
 }

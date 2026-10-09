@@ -1,5 +1,7 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import { execFile, spawn } from 'child_process';
+import { childEnv, envValue, findOnPath, realFs, resolveShell, shellArgs, type Env, type FsProbe } from '../platform';
 
 /**
  * Open a terminal in a directory, on the platforms Tars runs on.
@@ -15,6 +17,13 @@ import { execFile, spawn } from 'child_process';
  * flag that names the directory where the terminal has one), detached, with an
  * argv array and no shell: the directory is never parsed as a command. Before
  * this, Linux ran osascript and answered "spawn osascript ENOENT".
+ *
+ * Windows: Windows Terminal, `wt.exe -d <dir>`, when it is on
+ * the PATH; otherwise the user's shell (resolveShell: pwsh, Windows PowerShell,
+ * cmd) in a new console window, which a detached console program does not get
+ * by itself, so System32's conhost.exe starts it, the directory its cwd. argv
+ * only, no cmd.exe: `start` would have parsed the directory. wt splits its own
+ * command line at `;`, so a directory holding one goes to the console instead.
  *
  * Anything else: a clear refusal.
  */
@@ -32,13 +41,16 @@ export const LINUX_TERMINALS: LinuxTerminal[] = [
   { file: 'xterm', args: () => [] },
 ];
 
-type Options = { cwd?: string; detached?: boolean; stdio?: 'ignore'; timeout?: number };
+type Options = { cwd?: string; detached?: boolean; stdio?: 'ignore'; timeout?: number; env?: NodeJS.ProcessEnv };
 
 export interface OpenTerminalDeps {
   platform: NodeJS.Platform;
   /** Starts a program and resolves once it has started; rejects with ENOENT when it is not installed. */
   launch: (file: string, args: string[], options: Options) => Promise<void>;
   execFile: (file: string, args: string[], options: Options) => Promise<void>;
+  /** win32: the environment whose PATH is searched, and the disk it is searched on. */
+  env?: Env;
+  fs?: FsProbe;
 }
 
 /** The real launcher and runner, exported so a proof can drive them on another platform's branch. */
@@ -90,5 +102,40 @@ export async function openTerminal(cwd: string, deps: OpenTerminalDeps = realDep
     return { success: false, error: `No terminal found: looked for ${LINUX_TERMINALS.map(t => t.file).join(', ')}.` };
   }
 
+  if (deps.platform === 'win32') return openOnWindows(dir, deps);
+
   return { success: false, error: `Opening a terminal is not supported on ${deps.platform}.` };
+}
+
+async function openOnWindows(dir: string, deps: OpenTerminalDeps): Promise<OpenTerminalResult> {
+  const env = deps.env ?? process.env;
+  const probe = deps.fs ?? realFs;
+  const options: Options = { cwd: dir, detached: true, stdio: 'ignore' };
+  const tried: string[] = [];
+  const reason = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+  const wt = findOnPath('wt.exe', env, probe);
+  if (!wt) tried.push('wt.exe: not on the PATH');
+  else if (dir.includes(';')) tried.push('wt.exe: skipped, it would split the directory at its ";"');
+  else {
+    try {
+      await deps.launch(wt, ['-d', path.win32.resolve(dir)], options);
+      return { success: true, terminal: 'Windows Terminal' };
+    } catch (err) {
+      tried.push(`${wt}: ${reason(err)}`);
+    }
+  }
+
+  const conhost = path.win32.join(envValue(env, 'SystemRoot', 'win32') || 'C:\\Windows', 'System32', 'conhost.exe');
+  const shell = resolveShell({ env, platform: 'win32', fs: probe });
+  try {
+    // The shell's env: Windows PowerShell gets no PSModulePath (platform/child-env.ts).
+    // Through unknown: Env and Next's ProcessEnv (which requires NODE_ENV) do not overlap.
+    const shellEnv = childEnv(shell, env, 'win32') as unknown as NodeJS.ProcessEnv;
+    await deps.launch(conhost, [shell, ...shellArgs(shell, 'win32')], { ...options, env: shellEnv });
+    return { success: true, terminal: path.win32.basename(shell) };
+  } catch (err) {
+    tried.push(`${conhost}: ${reason(err)}`);
+  }
+  return { success: false, error: `No terminal could be started: ${tried.join('; ')}.` };
 }

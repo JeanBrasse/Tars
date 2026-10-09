@@ -31,6 +31,7 @@ import {
   SECTIONS,
 } from '@/components/Settings';
 import type { SettingsSection } from '@/components/Settings';
+import { settingsSectionOffered } from '@/lib/claude-accounts-offered';
 import 'xterm/css/xterm.css';
 
 /**
@@ -93,7 +94,7 @@ function SettingsPageInner() {
 
   // Deep-link: initialize from URL param
   useEffect(() => {
-    if (sectionParam && SECTIONS.some(s => s.id === sectionParam)) {
+    if (sectionParam && SECTIONS.some(s => s.id === sectionParam) && settingsSectionOffered(sectionParam)) {
       setActiveSection(sectionParam as SettingsSection);
     }
   }, [sectionParam]);

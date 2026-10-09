@@ -1,5 +1,6 @@
 import type { AgentCharacter, AgentTemplateInput, TemplateExport } from '@/types/electron';
 import { getProviderDef } from '@/lib/providers';
+import { isAbsolutePath, rendererPlatform } from '@/lib/display-path';
 
 /**
  * What a template sets, as the import and "Use" show it before an agent is
@@ -175,7 +176,7 @@ const refuse = (sentence: string): never => { throw new Refused(`Not imported: $
 
 const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every(s => typeof s === 'string');
 
-function readTemplate(raw: unknown, place: number): AgentTemplateInput {
+function readTemplate(raw: unknown, place: number, platform: string): AgentTemplateInput {
   const t = raw as Record<string, unknown> | null;
   if (!t || typeof t !== 'object' || Array.isArray(t) || typeof t.displayName !== 'string' || !t.displayName.trim()) {
     return refuse(`template ${place} has no name.`);
@@ -206,7 +207,7 @@ function readTemplate(raw: unknown, place: number): AgentTemplateInput {
   const folders = t.obsidianVaultPaths ?? [];
   if (!Array.isArray(folders)) refuse(`${name} has folders that are not a list of paths.`);
   for (const folder of folders as unknown[]) {
-    if (typeof folder !== 'string' || !folder.startsWith('/')) {
+    if (typeof folder !== 'string' || !isAbsolutePath(folder, platform)) {
       refuse(`${name} asks for the folder ${quoted(folder)}, which is not an absolute path.`);
     }
   }
@@ -241,8 +242,9 @@ function readTemplate(raw: unknown, place: number): AgentTemplateInput {
  * sentence the dialog shows, when any template in it cannot be shown as it
  * will be used; otherwise every template with what it sets, and the payload
  * to hand the main process: those templates and nothing else from the file.
+ * A folder is absolute as the platform the app runs on reads it.
  */
-export function reviewTemplateFile(json: unknown): TemplateFileReview {
+export function reviewTemplateFile(json: unknown, platform: string = rendererPlatform()): TemplateFileReview {
   try {
     const file = json as Record<string, unknown> | null;
     if (!file || typeof file !== 'object' || Array.isArray(file) || file.kind !== KIND) {
@@ -251,7 +253,7 @@ export function reviewTemplateFile(json: unknown): TemplateFileReview {
     if (file!.version !== 1) refuse('this Tars reads version 1 template files only.');
     const list = file!.templates;
     if (!Array.isArray(list) || list.length === 0) refuse('this file lists no templates.');
-    const inputs = (list as unknown[]).map((raw, i) => readTemplate(raw, i + 1));
+    const inputs = (list as unknown[]).map((raw, i) => readTemplate(raw, i + 1, platform));
     return {
       ok: true,
       templates: inputs.map(input => ({ input, facts: templateFacts(input) })),

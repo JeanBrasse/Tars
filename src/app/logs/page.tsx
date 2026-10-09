@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { lastPathPart, pathName } from '@/lib/display-path';
 import { Search } from 'lucide-react';
 import { PageHeader, Panel, PanelCaption, BrandSpinner, LoadingState } from '@/components/ui';
 import { SquareGrid } from '@/components/Splash';
@@ -57,7 +58,7 @@ export default function LogsPage() {
 
   /** The project an agent belongs to, as a name rather than a path. */
   const projectOf = (a: { projectPath: string }) =>
-    a.projectPath.split('/').filter(Boolean).pop() || a.projectPath;
+    pathName(a.projectPath) || a.projectPath;
 
   // Grouped by project, then by name, so the headings below are contiguous.
   const sortedFleet = useMemo(
@@ -195,7 +196,7 @@ export default function LogsPage() {
                     <span className="flex items-center gap-2 mb-0.5">
                       <span className="text-[10px] text-primary">{line.agentName}</span>
                       <span className="text-[10px] text-muted-foreground font-mono truncate">
-                        {line.branch || line.projectPath.split('/').pop()}
+                        {line.branch || lastPathPart(line.projectPath)}
                       </span>
                     </span>
                     <span className="block text-[11px] font-mono text-foreground break-all">{line.line}</span>

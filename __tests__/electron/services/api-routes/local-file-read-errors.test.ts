@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
+import { makeUnreadable } from '../../../setup/file-access';
 
 /**
  * /api/local-file answers a file it cannot read. It does not throw.
@@ -109,7 +110,7 @@ describe('GET /api/local-file on something it cannot read', { timeout: 15_000 },
   it('answers an error for a file it may not open, rather than a 200 cut short', async () => {
     const file = path.join(attachments, 'locked.png');
     fs.writeFileSync(file, 'not for you');
-    fs.chmodSync(file, 0o000);
+    const readable = makeUnreadable(file, 0o600);
     try {
       const answer = await get(file);
       await new Promise(resolve => setTimeout(resolve, 250));
@@ -117,7 +118,7 @@ describe('GET /api/local-file on something it cannot read', { timeout: 15_000 },
       expect(uncaught.map(e => String(e)), 'opening the file threw at the top of the process').toEqual([]);
       expect(answer).toMatchObject({ status: 500 });
     } finally {
-      fs.chmodSync(file, 0o600);
+      readable();
     }
   });
 });

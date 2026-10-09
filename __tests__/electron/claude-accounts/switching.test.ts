@@ -33,6 +33,7 @@
  * - a threshold move followed by "Continue": nothing was cut, nothing typed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -144,7 +145,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('a plan limit, told from a passing 429 (N4)', () => {
+describe.skipIf(claudeAccountsNotPorted())('a plan limit, told from a passing 429 (N4)', () => {
   it.each([
     [SESSION_LIMIT, 'fiveHour'],
     ["You've hit your weekly limit · resets Oct 3, 9am", 'sevenDay'],
@@ -177,7 +178,7 @@ describe('a plan limit, told from a passing 429 (N4)', () => {
   });
 });
 
-describe('an agent cut by its limit', () => {
+describe.skipIf(claudeAccountsNotPorted())('an agent cut by its limit', () => {
   it('blocks its account and moves it to the one with most room, restarting it a moment later', () => {
     counter('default', 100);
     counter(A, 40);
@@ -285,7 +286,7 @@ describe('an agent cut by its limit', () => {
   });
 });
 
-describe('an agent at rest on an account past its threshold', () => {
+describe.skipIf(claudeAccountsNotPorted())('an agent at rest on an account past its threshold', () => {
   it('moves at the end of its turn, as a threshold move, without cutting anything', () => {
     counter('default', 91);
     counter(A, 20);
@@ -336,7 +337,7 @@ describe('an agent at rest on an account past its threshold', () => {
   });
 });
 
-describe('the launch that makes the move', () => {
+describe.skipIf(claudeAccountsNotPorted())('the launch that makes the move', () => {
   const move = (a: AgentStatus, reason: 'limit' | 'threshold') => ({ agentId: a.id, from: 'default', to: A, reason, window: 'fiveHour' as const, usedPercentage: reason === 'limit' ? 100 : 91, at: NOW });
 
   it('keeps the move on the agent and tells every window', () => {

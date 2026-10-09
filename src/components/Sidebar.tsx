@@ -28,6 +28,7 @@ import Link from 'next/link';
 import { Brand } from '@/components/Brand';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppPathname, normalisePathname } from '@/hooks/useAppPathname';
+import { pageShortcutDigit, rendererPlatform } from '@/lib/terminal-keys';
 import { hoverEnd, hoverStart } from '@/lib/prefetch-on-hover';
 
 const navItems = [
@@ -100,21 +101,22 @@ function useWhatsNewBadge() {
 }
 
 /**
- * Cmd/Ctrl + digit jumps to a page. The shortcuts were declared next to each
- * nav item and bound to nothing, so they were decoration until now.
+ * Cmd/Ctrl + digit jumps to a page (Ctrl on Windows). The shortcuts were
+ * declared next to each nav item and bound to nothing, so they were decoration
+ * until now.
  */
 function useNavShortcuts() {
   const router = useRouter();
 
   useEffect(() => {
+    // Windows: Ctrl+digit from anywhere but a text field, a terminal included
+    // (its panels moved to Alt+digit). See pageShortcutDigit.
+    const platform = rendererPlatform();
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey && !e.ctrlKey) return;
-      if (e.altKey || e.shiftKey) return;
-      const target = e.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (target?.isContentEditable) return;
+      const digit = pageShortcutDigit(e, platform, e.target as HTMLElement | null);
+      if (digit === null) return;
 
-      const item = navItems.find(nav => nav.shortcut && nav.shortcut === e.key);
+      const item = navItems.find(nav => nav.shortcut && nav.shortcut === digit);
       if (!item) return;
       e.preventDefault();
       router.push(item.href);

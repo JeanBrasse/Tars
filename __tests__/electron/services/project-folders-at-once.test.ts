@@ -26,7 +26,10 @@ import { getClaudeProjects } from '../../../electron/services/claude-service';
 const BOUND = 8;
 let tmp: string;
 let now: number;
-const encode = (p: string) => p.replace(/[/.]/g, '-');
+// Claude Code's folder name for a project. On Windows every character that is
+// not an ASCII letter or digit becomes `-` (C:\Users\me is C--Users-me), the
+// rule e2e/fixture.mjs writes too; elsewhere `/` and `.`.
+const encode = (p: string) => process.platform === 'win32' ? p.replace(/[^a-zA-Z0-9]/g, '-') : p.replace(/[/.]/g, '-');
 
 /**
  * Every check on disk held a few ms, counted while it is under way. With

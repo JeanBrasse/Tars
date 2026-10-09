@@ -31,6 +31,19 @@ import { spawn, execFileSync } from 'node:child_process';
  * 6. Without ps (or with ps failing), nothing is signalled at all, where the
  *    run's own group still has to go.
  *
+ * On win32 (audit A21, and the phase 0 run where ps was ENOENT at every stop):
+ * 7. The stop ends the process Tars spawned alone, `child.kill()`, and every
+ *    command under it lives on. Windows has no process groups to signal and
+ *    no ps: the tree is ended from the root by taskkill /T /F
+ *    (platform/kill-tree.ts), before anything under it has lost its parent.
+ * 8. When taskkill cannot be run, nothing is ended, where the process Tars
+ *    spawned still has to go (case 6's counterpart: the tool that finds the
+ *    tree is taskkill there, not ps).
+ * Cases 1 to 6 run on every platform with the same assertions. On win32 the
+ * witness that the commands are out of the naive kill's reach is their
+ * parentage (each under the one before it, none the root) rather than their
+ * group, and ignoring SIGTERM changes nothing there: taskkill /F does not ask.
+ *
  * Not constructible here, and guarded in the code instead: a descendant in
  * Tars's own group. The run leads a session of its own (detached is setsid),
  * and a process can only join a group of its own session.
@@ -99,16 +112,20 @@ vi.mock('../../../electron/services/mcp-orchestrator', () => ({ getMcpOrchestrat
 vi.mock('../../../electron/providers', () => ({ getProvider: () => ({ getPtyEnvVars: () => ({}) }) }));
 vi.mock('../../../electron/services/usage-ledger', () => ({ recordUsage: vi.fn() }));
 
-/** ps, as the product runs it, unless a case takes it away. */
+const onWindows = process.platform === 'win32';
+/** The tool the stop finds the tree with: ps on macOS and Linux, taskkill on Windows. */
+const treeTool = (file: string) => file === 'ps' || /[\\/]taskkill\.exe$/i.test(file);
+
+/** ps (taskkill on Windows), as the product runs it, unless a case takes it away. */
 const psBroken = { value: false };
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   return {
     ...actual,
     execFile: ((file: string, ...rest: unknown[]) => {
-      if (psBroken.value && file === 'ps') {
+      if (psBroken.value && treeTool(file)) {
         const done = rest.find(r => typeof r === 'function') as ((err: Error, out: string, errOut: string) => void) | undefined;
-        setImmediate(() => done?.(Object.assign(new Error('spawn ps ENOENT'), { code: 'ENOENT' }), '', ''));
+        setImmediate(() => done?.(Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' }), '', ''));
         return {} as never;
       }
       return (actual.execFile as (...a: unknown[]) => unknown)(file, ...rest);
@@ -118,6 +135,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { delegateOverAcp, stopAcpRuns } from '../../../electron/services/acp/delegate';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { Leftovers } from '../../setup/leftover-processes';
 
 const agent = (id: string) => ({
   id, name: id, status: 'running', projectPath: tmp, provider: 'claude', skills: [], output: [], lastActivity: new Date().toISOString(),
@@ -128,11 +146,21 @@ const until = async (what: string, test: () => boolean, ms = 10_000) => {
   while (!test()) { if (Date.now() > end) throw new Error(`timed out: ${what}`); await new Promise(r => setTimeout(r, 50)); }
 };
 
-const leftovers: number[] = [];
+/** win32: each process's parent, from Win32_Process. The filter holds numbers only. */
+function parentsOf(pids: number[]): Map<number, number> {
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const filter = pids.map(pid => `ProcessId=${Math.trunc(pid)}`).join(' OR ');
+  const out = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+    `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }`]).toString();
+  return new Map(out.split(/\r?\n/).filter(Boolean).map(line => line.trim().split(' ').map(Number) as [number, number]));
+}
+
+// Ended by id only while the id is still the process the test saw: see leftover-processes.ts.
+const leftovers = new Leftovers();
 afterEach(() => {
   psBroken.value = false;
-  for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-});
+  leftovers.end();
+}, 60_000);
 
 /** Starts a delegated run of `tag` and waits until its agent and both commands are up. */
 async function runStarted(tag: string, stubborn: boolean) {
@@ -142,6 +170,14 @@ async function runStarted(tag: string, stubborn: boolean) {
   await until('the run started its commands', () => fs.existsSync(a.pidFile) && fs.readFileSync(a.pidFile, 'utf-8').split(' ').length === 3);
   const [adapter, command, nested] = fs.readFileSync(a.pidFile, 'utf-8').split(' ').map(Number);
   leftovers.push(adapter, command, nested);
+  if (onWindows) {
+    // The witness there: each command is a process under the one before it,
+    // which ending the root alone does not reach.
+    const parents = parentsOf([adapter, command, nested]);
+    expect(parents.get(command)).toBe(adapter);
+    expect(parents.get(nested)).toBe(command);
+    return { running, adapter, command, nested };
+  }
   // The witness: each command really is in a group of its own, not the run's.
   const groupOf = (pid: number) => Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)]).toString().trim());
   expect(groupOf(command)).toBe(command);

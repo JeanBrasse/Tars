@@ -7,12 +7,13 @@ import { BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
-import { API_PORT, API_TOKEN_FILE } from '../constants';
+import { API_PORT, API_TOKEN_FILE, privatePath } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
 import { agentForToken, isInternalToken, isTerminalToken } from '../core/agent-tokens';
 import { isWebhookSecret } from './hermes-webhook-secret';
+import { writeSecretFileEvenIfHeldSync, oneTimeRotationDue, oneTimeRotationDone } from '../utils/secret-file';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -106,8 +107,10 @@ function setApiServerState(patch: Partial<ApiServerState>): void {
 }
 
 function initApiToken(): string {
+  // Windows: minted anew once, the first time this build starts (secret-file.ts).
+  const rotated = privatePath('api-token-rotated');
   try {
-    if (fs.existsSync(API_TOKEN_FILE)) {
+    if (!oneTimeRotationDue(rotated) && fs.existsSync(API_TOKEN_FILE)) {
       const existing = fs.readFileSync(API_TOKEN_FILE, 'utf-8').trim();
       if (existing.length >= 32) {
         apiToken = existing;
@@ -121,7 +124,8 @@ function initApiToken(): string {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(API_TOKEN_FILE, token, { mode: 0o600 });
+  writeSecretFileEvenIfHeldSync(API_TOKEN_FILE, token);
+  oneTimeRotationDone(rotated);
   apiToken = token;
   return token;
 }

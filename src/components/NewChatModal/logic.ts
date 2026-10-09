@@ -1,4 +1,5 @@
 import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
+import { lastPathPart } from '@/lib/display-path';
 import type { TeamTemplateMember } from '@/types/electron';
 
 /**
@@ -57,7 +58,7 @@ export function canSubmitTeam(opts: { projectPath: string; selectedCount: number
 /** "Deploy 5 agents" / "Deploy 1 agent" / "Deploy a team" while nothing is picked yet. */
 /** The name a team member is deployed under, and so the name its mark in the table is drawn from. */
 export function deployedMemberName(memberName: string, projectPath: string): string {
-  return `${memberName} - ${projectPath.split('/').pop() || 'project'}`;
+  return `${memberName} - ${lastPathPart(projectPath) || 'project'}`;
 }
 
 export function deployButtonLabel(selectedCount: number): string {

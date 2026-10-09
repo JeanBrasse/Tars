@@ -6,6 +6,7 @@ import { getVaultDb, ftsSearch } from '../vault-db';
 import { RouteApp, RouteContext } from './types';
 import { isHardLinkInto, isWithinDir } from '../../utils/path-identity';
 import { landsUnderSafeRoot } from '../../utils/real-target';
+import { unlinkRetryingSync } from '../../platform/rename-replacing';
 
 export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
   // GET /api/vault/documents
@@ -140,7 +141,7 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
 
       const attachments = db.prepare('SELECT filepath FROM attachments WHERE document_id = ?').all(docId) as { filepath: string }[];
       for (const att of attachments) {
-        try { if (fs.existsSync(att.filepath)) fs.unlinkSync(att.filepath); } catch { /* ignore */ }
+        try { if (fs.existsSync(att.filepath)) unlinkRetryingSync(att.filepath); } catch { /* ignore */ }
       }
 
       db.prepare('DELETE FROM documents WHERE id = ?').run(docId);
