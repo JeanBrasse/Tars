@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
  * Taking over the token-stats lock a dead render left, and releasing one's
@@ -97,6 +98,7 @@ const homes: string[] = [];
 const children: ChildProcess[] = [];
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
@@ -182,7 +184,8 @@ function bench() {
   return { home, lock, at, render, start, ended, backdate, deadHolder, sessions };
 }
 
-describe('taking over the token-stats lock, and releasing it', () => {
+// The Node status line's side: node-statusline.test.ts.
+describe.skipIf(shHooksNotShipped())('taking over the token-stats lock, and releasing it', () => {
   it('1. a render that judged a dead lock stale leaves it to the render that took it over first', async () => {
     const b = bench();
     await b.deadHolder(60);

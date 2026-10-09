@@ -43,9 +43,12 @@ vi.mock('../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() =>
 import { registerHooksRoutes } from '../../electron/services/api-routes/hooks-routes';
 import { agents } from '../../electron/core/agent-manager';
 import { ClaudeProvider } from '../../electron/providers/claude-provider';
+import { nodeHookCommand } from '../../electron/utils/hook-command';
 import type { RouteApp, RouteContext, RouteRequest } from '../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../electron/types';
 import { sid } from '../fixtures/session-id';
+import { moveTestHome } from '../setup/test-home';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const HOOK = path.join(HOOKS_DIR, 'stop-failure.sh');
@@ -205,7 +208,7 @@ async function failTurn(payload: Record<string, unknown>): Promise<void> {
   }
 }
 
-describe('a turn that fails on an API error', () => {
+describe.skipIf(shHooksNotShipped())('a turn that fails on an API error', () => {
   it('puts the agent in error with the words the CLI wrote instead of an answer', async () => {
     const agent = putAgent();
     // The order the CLI measured: the turn begins, then fails.
@@ -294,7 +297,7 @@ describe('a turn that fails on an API error', () => {
  * noteTurnStarted clears it on a new turn even for an agent left in `error`.
  * TeamRail shows the sentence only while the status is `error`.
  */
-describe('a failed turn left alone', () => {
+describe.skipIf(shHooksNotShipped())('a failed turn left alone', () => {
   it('still shows the failure when the idle prompt comes a minute later', async () => {
     const agent = putAgent();
     post({ agent_id: 'a1', session_id: SESSION, status: 'running', event: 'UserPromptSubmit' });
@@ -359,7 +362,7 @@ describe('a failed turn left alone', () => {
  * asserted there would be the setting's doing and not the guard's. The second
  * test is the proof that it is live in this harness.
  */
-describe('the waiting notification after a failed turn', () => {
+describe.skipIf(shHooksNotShipped())('the waiting notification after a failed turn', () => {
   function withTheAppDefaults(): void {
     Object.assign(ctx.getAppSettings(), { notificationsEnabled: true, notifyOnWaiting: true, notifyOnError: true });
   }
@@ -446,8 +449,7 @@ describe('the waiting notification after a failed turn', () => {
 describe('the hook reaches every claude-family CLI', () => {
   it('is registered for StopFailure in the settings they all read', async () => {
     const home = fs.mkdtempSync(path.join(tmp, 'home-'));
-    const realHome = process.env.HOME;
-    process.env.HOME = home;
+    const restoreHome = moveTestHome(home);
     try {
       const provider = new ClaudeProvider();
       // This writes a settings file. Refuse to write the real one.
@@ -456,13 +458,17 @@ describe('the hook reaches every claude-family CLI', () => {
       await provider.configureHooks(HOOKS_DIR);
 
       const settings = JSON.parse(fs.readFileSync(path.join(provider.configDir, 'settings.json'), 'utf-8'));
-      expect(settings.hooks.StopFailure?.[0]?.hooks?.[0]?.command).toBe(HOOK);
+      // On win32 the CLI runs the Node runner for the same event (hook-command.ts).
+      const expected = process.platform === 'win32'
+        ? nodeHookCommand(path.join(HOOKS_DIR, 'tars-hook.mjs'), 'stop-failure')
+        : HOOK;
+      expect(settings.hooks.StopFailure?.[0]?.hooks?.[0]?.command).toBe(expected);
     } finally {
-      process.env.HOME = realHome;
+      restoreHome();
     }
   });
 
-  it('is executable, since the CLI runs it by path', () => {
+  it.skipIf(shHooksNotShipped())('is executable, since the CLI runs it by path', () => {
     expect(fs.statSync(HOOK).mode & 0o111).not.toBe(0);
   });
 });

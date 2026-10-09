@@ -4,10 +4,11 @@ import { randomBytes } from 'crypto';
 import { ProcessTree, processTable, processTableNow } from '../services/acp/client';
 import { beginQuit, isQuitting, refuseWhileQuitting } from './quit-state';
 import * as pty from 'node-pty';
-import { defaultShell } from '../utils/default-shell';
+import { resolveShell, shellArgs, childEnv } from '../platform';
+import { holdExitUntilTerminalsExit, killPty as endTerminal } from './pty-kill';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke, restoreKeys } from './input-draft';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { envelopeValue } from '../utils/envelope-value';
@@ -23,7 +24,7 @@ export function killPty(ptyId: string, isQuick = false): boolean {
   const processes = isQuick ? quickPtyProcesses : ptyProcesses;
   const ptyProcess = processes.get(ptyId);
   if (ptyProcess) {
-    ptyProcess.kill();
+    endTerminal(ptyProcess);
     processes.delete(ptyId);
     return true;
   }
@@ -75,6 +76,13 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
   for (const map of [...agentMaps, quickPtyProcesses]) map.clear();
   const count = trees.length + shells.length;
   if (count === 0) return;
+  // win32: the app's exit then waits for each ConPTY terminal to report its
+  // own, past this grace if it must (pty-kill.ts). Nothing elsewhere, where
+  // `app` is not even read.
+  holdExitUntilTerminalsExit([...trees, ...shells], {
+    once: (event, listener) => app.once(event, listener),
+    exit: code => app.exit(code),
+  });
   await endTerminals(trees, shells, graceMs, { waitForExits: true });
   console.log(`Ended ${count} terminal(s) on quit`);
 }
@@ -115,7 +123,7 @@ async function endTerminals(trees: pty.IPty[], shells: pty.IPty[], graceMs: numb
     try { t.onExit(done); } catch { done(); }
   }));
   for (const t of terminals) {
-    try { t.kill(); } catch { /* already gone */ }
+    try { endTerminal(t); } catch { /* already gone */ }
   }
   // A stop with no tree of Tars's own to watch: the hangup is all there is to do.
   if (!opts.waitForExits && ours.length === 0) return;
@@ -154,7 +162,7 @@ export function killAllPty(): void {
   for (const map of allMaps) {
     for (const [id, proc] of map) {
       try {
-        proc.kill();
+        endTerminal(proc);
         killed++;
       } catch (err) {
         console.warn(`Failed to kill PTY ${id}:`, err);
@@ -1176,14 +1184,14 @@ export function createQuickPty(
   mainWindow: BrowserWindow | null
 ): string {
   refuseWhileQuitting('terminal');
-  const shell = defaultShell();
+  const shell = resolveShell();
 
-  const ptyProcess = pty.spawn(shell, ['-l'], {
+  const ptyProcess = pty.spawn(shell, shellArgs(shell), {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 24,
     cwd: cwd || os.homedir(),
-    env: process.env as { [key: string]: string },
+    env: childEnv(shell, process.env) as { [key: string]: string },
   });
 
   const id = uuidv4();

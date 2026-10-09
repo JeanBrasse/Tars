@@ -70,6 +70,8 @@ import { execFileSync } from 'child_process';
 import {
   listOrphanFolders, removeOrphanFolders, diskSpace, DISK_FLOOR_BYTES, procCwds,
 } from '../../../electron/services/orphan-folders';
+import { cannotSymlink } from '../../setup/symlink-privilege';
+import { makeUnreadable } from '../../setup/file-access';
 
 let root: string;
 let project: string;
@@ -81,6 +83,29 @@ function file(p: string, bytes: number, when?: Date): void {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, Buffer.alloc(bytes, 120));
   if (when) fs.utimesSync(p, when, when);
+}
+
+/**
+ * `file` in `folder` cannot be removed. macOS and Linux: the folder at 0555,
+ * as this test always did. Windows has no mode bits, and a read-only folder
+ * still lets its children go: there access control entries deny this account
+ * deleting the file and the folder deleting its children, since either one
+ * alone still lets the file go (measured 2026-10-07). The failure there is
+ * EPERM where POSIX says EACCES.
+ */
+function makeUnremovable(folder: string, file: string): () => void {
+  if (process.platform !== 'win32') {
+    fs.chmodSync(folder, 0o555);
+    return () => fs.chmodSync(folder, 0o755);
+  }
+  const icacls = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'icacls.exe');
+  const account = os.userInfo().username;
+  execFileSync(icacls, [file, '/deny', `${account}:(DE)`], { stdio: 'pipe' });
+  execFileSync(icacls, [folder, '/deny', `${account}:(DC)`], { stdio: 'pipe' });
+  return () => {
+    execFileSync(icacls, [folder, '/remove:d', account], { stdio: 'pipe' });
+    execFileSync(icacls, [file, '/remove:d', account], { stdio: 'pipe' });
+  };
 }
 
 /** A worktree git made, then forgot: its .git points to a gitdir that is gone. */
@@ -145,7 +170,8 @@ describe('listing', () => {
     const outside = path.join(root, 'outside');
     file(path.join(outside, 'precious.txt'), 10);
     fs.mkdirSync(path.join(project, '.worktrees'), { recursive: true });
-    fs.symlinkSync(outside, path.join(project, '.worktrees', 'a-link'));
+    // Only where this account may make a link (symlink-privilege.ts): what is outside .worktrees is checked everywhere.
+    if (!cannotSymlink()) fs.symlinkSync(outside, path.join(project, '.worktrees', 'a-link'));
     file(path.join(project, 'not-a-worktree', 'x.txt'), 10);
     const listing = await listOrphanFolders({ projects: [project], owned: [] });
     expect(listing.folders.map(f => f.name)).toEqual([]);
@@ -209,7 +235,7 @@ describe('removing them all', () => {
     expect(fs.existsSync(taken)).toBe(true);
   });
 
-  it('6. follows no link: a link out of .worktrees is neither listed nor removed through', async () => {
+  it.skipIf(cannotSymlink())('6. follows no link: a link out of .worktrees is neither listed nor removed through', async () => {
     const outside = path.join(root, 'outside');
     file(path.join(outside, 'precious.txt'), 10);
     fs.mkdirSync(path.join(project, '.worktrees'), { recursive: true });
@@ -331,11 +357,11 @@ describe('what the folder\'s own .git says', () => {
 
   it('18. keeps an orphan with a folder below it that cannot be read', async () => {
     file(wts('locked', 'inner', 'x.txt'), 10);
-    fs.chmodSync(wts('locked', 'inner'), 0o000);
+    const restore = makeUnreadable(wts('locked', 'inner'), 0o755);
     try {
       expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
     } finally {
-      fs.chmodSync(wts('locked', 'inner'), 0o755);
+      restore();
     }
   });
 
@@ -343,7 +369,12 @@ describe('what the folder\'s own .git says', () => {
     const many = wts('huge', 'many');
     fs.mkdirSync(many, { recursive: true });
     for (let i = 0; i <= 50_000; i++) fs.writeFileSync(path.join(many, String(i)), '');
-    expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
+    try {
+      expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
+    } finally {
+      // Deleted within this test's time: on Windows the 50 001 files took longer than afterEach's 10 s.
+      fs.rmSync(wts('huge'), { recursive: true, force: true });
+    }
   }, 120_000);
 
   it('14. reads the processes again before each folder goes', async () => {
@@ -424,19 +455,20 @@ describe('what the window showed', () => {
 
   it('20. says why a folder could not be removed without its absolute path', async () => {
     file(wts('stuck', 'locked', 'f'), 10);
-    fs.chmodSync(wts('stuck', 'locked'), 0o555);
+    const restore = makeUnremovable(wts('stuck', 'locked'), wts('stuck', 'locked', 'f'));
     try {
       const report = await removeShown({ projects: [project], owned: [], processCwds: noProcess });
-      expect(report.kept).toEqual([{ path: wts('stuck'), project, reason: 'failed', detail: 'EACCES on locked/f' }]);
+      const refused = process.platform === 'win32' ? 'EPERM' : 'EACCES';
+      expect(report.kept).toEqual([{ path: wts('stuck'), project, reason: 'failed', detail: `${refused} on ${path.join('locked', 'f')}` }]);
       for (const k of report.kept) expect(k.detail ?? '').not.toContain(root);
     } finally {
-      fs.chmodSync(wts('stuck', 'locked'), 0o755);
+      restore();
     }
   });
 });
 
 describe('the processes on Linux', () => {
-  it("15. are unknown when /proc cannot be read, or when Tars's own working directory is not among them", () => {
+  it.skipIf(cannotSymlink())("15. are unknown when /proc cannot be read, or when Tars's own working directory is not among them", () => {
     const fake = fs.mkdtempSync(path.join(root, 'proc-'));
     expect(procCwds(path.join(fake, 'missing'), 999)).toBeNull();
     fs.mkdirSync(path.join(fake, '123'));

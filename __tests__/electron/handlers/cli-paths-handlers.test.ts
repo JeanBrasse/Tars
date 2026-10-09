@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+
+import { pinPlatform } from '../providers/win-fake-disk';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -27,9 +29,9 @@ vi.mock('child_process', () => ({
   exec: vi.fn((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string }) => void) => {
     cb(null, { stdout: '' });
   }),
-  // The login shell that reads the user's PATH.
+  // The login shell that reads the user's PATH, and `which`, now an argv too.
   execFile: vi.fn((file: string, args: string[], _opts: unknown, cb: (err: Error | null, result: { stdout: string }) => void) => {
-    shellCalls.push({ file, args });
+    if (file !== 'which') shellCalls.push({ file, args });
     cb(null, { stdout: '' });
   }),
 }));
@@ -60,15 +62,23 @@ function invokeHandler(channel: string, ...args: unknown[]): Promise<unknown> {
 // ── Setup ────────────────────────────────────────────────────────────────────
 
 let mockSettings: Record<string, unknown>;
+let unpin: () => void;
 
 beforeEach(() => {
   vi.resetModules();
+  // Everything below is the darwin/linux detection: a login shell, `which`,
+  // extensionless binaries. Windows has its own, in cli-paths-platforms.test.ts.
+  unpin = pinPlatform('darwin');
   handlers = new Map();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-paths-test-'));
   fs.mkdirSync(path.join(tmpDir, '.dorothy'), { recursive: true });
 
   mockSettings = {};
   shellCalls.length = 0;
+});
+
+afterEach(() => {
+  unpin();
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────────

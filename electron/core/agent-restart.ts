@@ -1,6 +1,7 @@
 import { agents, saveAgents } from './agent-manager';
 import { ptyProcesses, fieldInUse, onFieldChange, type FieldInUse } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
+import { killPty } from './pty-kill';
 import { launchAgent, CLI_BOOT_MS, dialogOpen, noteCliLaunched, cliLaunchedAt } from './agent-launch';
 import { getProvider } from '../providers';
 import { agentStatusEmitter } from '../services/agent-events';
@@ -397,7 +398,7 @@ async function restartNow(agent: AgentStatus, cause: 'settings' | 'asked'): Prom
       const old = ptyProcesses.get(agent.ptyId);
       ptyProcesses.delete(agent.ptyId);
       try {
-        old?.kill();
+        if (old) killPty(old);
       } catch (err) {
         console.warn(`[restart] ${agent.name || agent.id}: the old terminal did not close cleanly:`, err);
       }

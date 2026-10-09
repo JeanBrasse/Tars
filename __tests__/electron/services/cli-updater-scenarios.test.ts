@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { runCliUpdatePass, updateCli, startCliUpdates, clisInUse, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
 import type { AppSettings } from '../../../electron/types';
+import { cannotPlantPosixInstall } from '../../setup/posix-install-layout';
 
 /**
  * What cli-updater.test.ts does not pin, written by QA at the gate of PR #119:
@@ -147,7 +148,7 @@ describe('QA #119: the schedule', () => {
     expect(intervals.map(t => [t.ms, t.unref])).toEqual([[30 * 60 * 1000, true]]);
   });
 
-  it('Q2 first pass updates claude and names an installed CLI it leaves alone; a tick during a pass starts nothing; the next tick runs', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q2 first pass updates claude and names an installed CLI it leaves alone; a tick during a pass starts nothing; the next tick runs', async () => {
     const home = os.homedir();
     nativeClaude(home, '1.0.0');
     const codexRan = path.join(root, 'codex-ran');
@@ -196,7 +197,7 @@ describe('QA #119: the schedule', () => {
     }
   }, 60_000);
 
-  it('Q3 runs one CLI at a time within a pass', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q3 runs one CLI at a time within a pass', async () => {
     const home = path.join(root, 'home');
     nativeClaude(home);
     const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
@@ -209,7 +210,7 @@ describe('QA #119: the schedule', () => {
 });
 
 describe('QA #119: what the log says', () => {
-  it('Q4 logs two successive updates, one per pass', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q4 logs two successive updates, one per pass', async () => {
     const home = path.join(root, 'home');
     nativeClaude(home);
     await runCliUpdatePass([{ cli: 'claude', command: 'claude' }], ctxFor(home, { FAKE_NEXT: '1.0.1' }));
@@ -219,14 +220,14 @@ describe('QA #119: what the log says', () => {
     expect(lines[1]).toContain('claude updated 1.0.1 to 1.0.2');
   });
 
-  it('Q8 reports a link that is gone after the update as a failure', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q8 reports a link that is gone after the update as a failure', async () => {
     const home = path.join(root, 'home');
     nativeClaude(home);
     const r = await updateCli('claude', 'claude', ctxFor(home, { FAKE_CLAUDE_MODE: 'unlink' }));
     expect(r.outcome).toBe('failed');
   });
 
-  it('Q10 finds an install under a home reached through a symlink', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q10 finds an install under a home reached through a symlink', async () => {
     const real = path.join(root, 'real-home');
     nativeClaude(real);
     const alias = path.join(root, 'alias-home');
@@ -235,7 +236,7 @@ describe('QA #119: what the log says', () => {
     expect(r.outcome).toBe('updated');
   });
 
-  it('Q11 moves a log past 256 KB to .1 and starts a new one', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q11 moves a log past 256 KB to .1 and starts a new one', async () => {
     const home = path.join(root, 'home');
     nativeClaude(home);
     const log = path.join(root, 'cli-updates.log');
@@ -247,7 +248,7 @@ describe('QA #119: what the log says', () => {
 });
 
 describe('QA #119: Amp paths the PR tests do not reach', () => {
-  it('Q5 holds an update back when it cannot tell whether Amp is running (no lsof)', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q5 holds an update back when it cannot tell whether Amp is running (no lsof)', async () => {
     const home = path.join(root, 'home');
     const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
     // lsof is in /usr/sbin on macOS and in /usr/bin on Linux: every folder that
@@ -260,7 +261,7 @@ describe('QA #119: Amp paths the PR tests do not reach', () => {
     expect(recorded().some(c => c[0] === 'npm-start' && c[2] === 'global')).toBe(false);
   });
 
-  it('Q6 installs nothing when the download fails', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q6 installs nothing when the download fails', async () => {
     const home = path.join(root, 'home');
     const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
     const r = await updateCli('amp', amp, ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_NPM_MODE: 'download-fails' }));
@@ -269,14 +270,14 @@ describe('QA #119: Amp paths the PR tests do not reach', () => {
     expect(recorded().some(c => c[0] === 'npm-start' && c[2] === 'global')).toBe(false);
   });
 
-  it('Q7 does not call an install that left the old version in place an update', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q7 does not call an install that left the old version in place an update', async () => {
     const home = path.join(root, 'home');
     const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
     const r = await updateCli('amp', amp, ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_NPM_MODE: 'no-change' }));
     expect(r.outcome).toBe('failed');
   }, 60_000);
 
-  it('Q9 takes a minor release as newer', async () => {
+  it.skipIf(cannotPlantPosixInstall())('Q9 takes a minor release as newer', async () => {
     const home = path.join(root, 'home');
     const amp = npmAmp(path.join(home, 'npm-global'), '0.0.5');
     const r = await updateCli('amp', amp, ctxFor(home, { FAKE_LATEST: '0.1.0' }));
@@ -285,7 +286,7 @@ describe('QA #119: Amp paths the PR tests do not reach', () => {
 });
 
 describe('one switch, and only the CLIs the fleet runs (Noah, 2026-09-23)', () => {
-  it('U1 checks no CLI while "Check for updates" is off, says so once, and checks again once it is back on', async () => {
+  it.skipIf(cannotPlantPosixInstall())('U1 checks no CLI while "Check for updates" is off, says so once, and checks again once it is back on', async () => {
     const home = os.homedir();
     nativeClaude(home, '1.0.0');
     process.env.FAKE_CALLS = calls;
@@ -316,7 +317,7 @@ describe('one switch, and only the CLIs the fleet runs (Noah, 2026-09-23)', () =
     }
   }, 60_000);
 
-  it('U2 leaves an installed Amp alone on a fleet with no Amp agent, and updates it once one runs it', async () => {
+  it.skipIf(cannotPlantPosixInstall())('U2 leaves an installed Amp alone on a fleet with no Amp agent, and updates it once one runs it', async () => {
     const home = path.join(root, 'home');
     const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
     const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2' });
@@ -381,7 +382,7 @@ describe('QA #140: the switch at every tick, and the fleet at every tick', () =>
 
   // Settings are saved the way app:saveSettings saves them: a new object each
   // time, never the one the updater was started with changed in place.
-  it('V1 checks again at the next tick once the switch is back on, counted by the CLI it runs', async () => {
+  it.skipIf(cannotPlantPosixInstall())('V1 checks again at the next tick once the switch is back on, counted by the CLI it runs', async () => {
     let settings = { cliPaths: {}, autoCheckUpdates: false } as unknown as AppSettings;
     await scheduled(() => settings, ['claude'], async tick => {
       tick();
@@ -393,7 +394,7 @@ describe('QA #140: the switch at every tick, and the fleet at every tick', () =>
     });
   }, 60_000);
 
-  it('V2 stops at the next tick when the switch is turned off after a pass, says so once, and resumes when it is back on', async () => {
+  it.skipIf(cannotPlantPosixInstall())('V2 stops at the next tick when the switch is turned off after a pass, says so once, and resumes when it is back on', async () => {
     let settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
     await scheduled(() => settings, ['claude'], async tick => {
       tick();
@@ -411,7 +412,7 @@ describe('QA #140: the switch at every tick, and the fleet at every tick', () =>
     });
   }, 60_000);
 
-  it('V3 leaves an installed claude alone once no agent runs it, says so, and checks it again when one does', async () => {
+  it.skipIf(cannotPlantPosixInstall())('V3 leaves an installed claude alone once no agent runs it, says so, and checks it again when one does', async () => {
     const settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
     const fleet: Array<string | undefined> = ['claude'];
     await scheduled(() => settings, fleet, async tick => {
@@ -429,7 +430,7 @@ describe('QA #140: the switch at every tick, and the fleet at every tick', () =>
     });
   }, 60_000);
 
-  it('V4 counts an agent with no provider as a claude agent, as every launch does', async () => {
+  it.skipIf(cannotPlantPosixInstall())('V4 counts an agent with no provider as a claude agent, as every launch does', async () => {
     const settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
     await scheduled(() => settings, [undefined], async tick => {
       tick();

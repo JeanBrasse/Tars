@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { pinPlatform } from './providers/win-fake-disk';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
+import { hasPosixModes } from '../setup/platform-limits';
 
 /**
  * The files Tars shares with other programs are never seen half-written.
@@ -42,7 +44,10 @@ vi.mock('electron', () => ({
 
 // The claude binary never runs here. `claude mcp add` and `claude mcp remove`
 // fail, as they do when the CLI is missing, so the provider takes its mcp.json
-// path, which is the one under test.
+// path, which is the one under test. The mock knows the CLI by the bare name
+// it is started with, which is what darwin/linux pass; on win32 the name is
+// resolved to a real file first (a claude.exe the PATH may well hold), so the
+// suites that reach the CLI run as linux: see cliAsGiven below.
 const { claudeRuns, claudeOptions } = vi.hoisted(() => ({ claudeRuns: [] as string[][], claudeOptions: [] as unknown[] }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
@@ -79,8 +84,10 @@ import { ClaudeProvider } from '../../electron/providers/claude-provider';
 import { getAllProviders } from '../../electron/providers';
 import { setupMemoryBackends, setupOrchestratorSetupHandler, setupOrchestratorRemoveHandler } from '../../electron/services/mcp-orchestrator';
 import { enableStatusLine, disableStatusLine } from '../../electron/utils/statusline';
+import { nodeHookCommand } from '../../electron/utils/hook-command';
 import { KANBAN_FILE, dataPath } from '../../electron/constants';
 import type { AppSettings } from '../../electron/types';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 const nodeFs = createRequire(import.meta.url)('node:fs') as typeof fs;
 const home = () => os.homedir();
@@ -189,6 +196,19 @@ function writeMcpJson(contents: unknown = mcpServersNow): void {
   fs.writeFileSync(mcpJson(), typeof contents === 'string' ? contents : JSON.stringify(contents, null, 2));
 }
 
+/**
+ * For a suite that makes the product start `claude`: process.platform reads
+ * linux, so the name reaches the mock above as given and nothing is resolved
+ * on the disk. On a Windows host the resolver would otherwise find the
+ * machine's own claude.exe and run it. How win32 starts the CLI is proven
+ * against a recording npm shim in providers/mcp-registration-cli.test.ts.
+ */
+function cliAsGiven() {
+  let unpin: () => void = () => {};
+  beforeEach(() => { unpin = pinPlatform('linux'); });
+  afterEach(() => unpin());
+}
+
 beforeEach(() => {
   fs.rmSync(claudeJson(), { force: true });
   fs.rmSync(path.join(home(), '.claude'), { recursive: true, force: true });
@@ -246,7 +266,7 @@ describe('~/.claude.json, through ensureProjectTrusted', () => {
     expect(fs.statSync(claudeJson()).mtimeMs).toBe(before.mtimeMs);
   });
 
-  it('keeps the file readable by its owner only', () => {
+  it.skipIf(!hasPosixModes())('keeps the file readable by its owner only', () => {
     claudeConfig();
 
     ensureProjectTrusted('/work/new-project');
@@ -278,7 +298,7 @@ describe('~/.claude.json, through ensureProjectTrusted', () => {
     });
   });
 
-  it('updates the file a link points at, and leaves the link a link', () => {
+  it.skipIf(cannotSymlink())('updates the file a link points at, and leaves the link a link', () => {
     const dotfiles = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-dotfiles-'));
     fs.writeFileSync(path.join(dotfiles, 'claude.json'), JSON.stringify({ projects: {} }), { mode: 0o600 });
     fs.symlinkSync(path.join(dotfiles, 'claude.json'), claudeJson());
@@ -349,6 +369,10 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
   const settingsNow = { env: { A: '1' }, permissions: { allow: ['Bash(git:*)'], deny: [] }, statusLine: { type: 'command', command: 'statusline.sh' } };
   const configureHooks = () => new ClaudeProvider().configureHooks(HOOKS_DIR);
   const stopHook = () => (readAsJson(claudeSettings()) as { hooks?: { Stop?: Array<{ hooks: Array<{ command: string }> }> } }).hooks?.Stop?.[0]?.hooks?.[0]?.command;
+  /** What the Stop entry runs: the .sh on darwin and linux, the Node runner on win32 (hook-command.ts). */
+  const OUR_STOP = process.platform === 'win32'
+    ? nodeHookCommand(path.join(HOOKS_DIR, 'tars-hook.mjs'), 'on-stop')
+    : path.join(HOOKS_DIR, 'on-stop.sh');
 
   beforeEach(() => {
     fs.mkdirSync(path.dirname(claudeSettings()), { recursive: true });
@@ -359,7 +383,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
     await configureHooks();
 
     expect(readAsJson(claudeSettings())).toMatchObject(settingsNow);
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(stopHook()).toBe(OUR_STOP);
   });
 
   it('leaves the previous file whole when the write dies halfway', async () => {
@@ -385,7 +409,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 
     expect(seenMidway.length, 'the write was not cut into, so this proves nothing').toBeGreaterThan(0);
     for (const seen of seenMidway) expect(seen).toEqual(settingsNow);
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(stopHook()).toBe(OUR_STOP);
   });
 
   it('writes nothing when every hook is already there', async () => {
@@ -401,8 +425,8 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 
     await configureHooks();
 
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
-    expect(fs.statSync(claudeSettings()).mode & 0o777).toBe(0o600);
+    expect(stopHook()).toBe(OUR_STOP);
+    if (hasPosixModes()) expect(fs.statSync(claudeSettings()).mode & 0o777).toBe(0o600);
   });
 
   it('keeps a change Claude made between the read and the rename', async () => {
@@ -423,7 +447,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 
     expect(claudeWrote).toBe(true);
     expect(readAsJson(claudeSettings())).toMatchObject({ ...settingsNow, model: 'opus' });
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(stopHook()).toBe(OUR_STOP);
   });
 
   it('leaves a file that is not JSON exactly as it is, instead of the hooks alone', async () => {
@@ -437,6 +461,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 });
 
 describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has failed', () => {
+  cliAsGiven();
   const mcpJson = () => path.join(home(), '.claude', 'mcp.json');
   /** A server someone added by hand, with its token, beside one of Tars's. */
   const servers = {
@@ -496,7 +521,7 @@ describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has f
     expect(writes).toEqual([]);
   });
 
-  it("keeps the file's own mode, and creates a new one readable by its owner only", async () => {
+  it.skipIf(!hasPosixModes())("keeps the file's own mode, and creates a new one readable by its owner only", async () => {
     fs.chmodSync(mcpJson(), 0o644);
     await register();
     expect(fs.statSync(mcpJson()).mode & 0o777).toBe(0o644);
@@ -561,6 +586,15 @@ describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has f
 describe("Claude's settings.json, through the status line Tars turns on at every launch", () => {
   const settingsDir = () => path.dirname(claudeSettings());
   const statusLine = () => (readAsJson(claudeSettings()) as { statusLine?: { command?: string } }).statusLine;
+  /**
+   * The command Tars's status line runs: its bash script in the data folder on
+   * darwin and linux, the bundled statusline.mjs through Node on win32.
+   * The bundled hooks folder is where the electron mock above
+   * puts the app, this checkout.
+   */
+  const OUR_STATUS_LINE = process.platform === 'win32'
+    ? nodeHookCommand(path.join(process.cwd(), 'hooks', 'statusline.mjs'))
+    : dataPath('statusline.sh');
   const withoutStatusLine = () => {
     const rest = { ...(readAsJson(claudeSettings()) as Record<string, unknown>) };
     delete rest.statusLine;
@@ -575,7 +609,7 @@ describe("Claude's settings.json, through the status line Tars turns on at every
   it('changes statusLine and nothing else in a whole settings file', () => {
     enableStatusLine();
 
-    expect(statusLine()?.command).toBe(dataPath('statusline.sh'));
+    expect(statusLine()?.command).toBe(OUR_STATUS_LINE);
     expect(withoutStatusLine()).toEqual(fullSettings);
   });
 
@@ -598,7 +632,7 @@ describe("Claude's settings.json, through the status line Tars turns on at every
 
     expect(seenMidway.length, 'the write was not cut into, so this proves nothing').toBeGreaterThan(0);
     for (const seen of seenMidway) expect(seen).toEqual(fullSettings);
-    expect(statusLine()?.command).toBe(dataPath('statusline.sh'));
+    expect(statusLine()?.command).toBe(OUR_STATUS_LINE);
   });
 
   it('leaves the previous file whole when the write dies halfway', () => {
@@ -665,7 +699,7 @@ describe('~/.claude.json, through the memory backends Tars registers at launch',
       ...config,
       mcpServers: { ...config.mcpServers, honcho: { type: 'http', url: 'https://honcho.example/mcp', headers: { Authorization: 'Bearer hk_example' } } },
     });
-    expect(fs.statSync(claudeJson()).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(claudeJson()).mode & 0o777).toBe(0o600);
   });
 
   it('never shows a reader a partial file while it writes', () => {
@@ -716,6 +750,7 @@ describe('~/.claude.json, through the memory backends Tars registers at launch',
 });
 
 describe('~/.claude/mcp.json, from every provider whose configDir is ~/.claude', () => {
+  cliAsGiven();
   // Found by the directory they write into, not listed: Claude and the
   // providers that run its binary.
   const family = getAllProviders().filter(p => p.configDir === path.join(os.homedir(), '.claude'));
@@ -835,6 +870,7 @@ describe('~/.claude/mcp.json, from the MCP settings page', () => {
 });
 
 describe('~/.claude/mcp.json, from the orchestrator setup when `claude mcp add` fails', () => {
+  cliAsGiven();
   const resources = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resources-'));
   const bundle = path.join(resources, 'mcp-orchestrator', 'dist', 'bundle.js');
   const processWithResources = process as NodeJS.Process & { resourcesPath?: string };
@@ -930,7 +966,7 @@ describe("fs:write-text-file and Claude's own files", () => {
     expect(fs.readFileSync(file, 'utf-8')).toBe(before);
   });
 
-  it('refuses them through a link too', async () => {
+  it.skipIf(cannotSymlink())('refuses them through a link too', async () => {
     fs.symlinkSync(claudeSettings(), path.join(home(), '.claude', 'CLAUDE.md'));
     const before = fs.readFileSync(claudeSettings(), 'utf-8');
 

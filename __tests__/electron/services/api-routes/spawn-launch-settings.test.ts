@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll, beforeAll } from 'vitest';
 import { EventEmitter } from 'events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -58,6 +58,17 @@ import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { encodeProjectDirName } from '../../../../electron/utils/resume-session';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
 
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-spawn-settings-'));
 const LAST_SESSION = '5f0c2d4e-8a61-4b7e-9d3a-2c1b0e9f7a64';
@@ -129,8 +140,18 @@ beforeEach(() => {
   vi.mocked(pty.spawn).mockClear();
 });
 
+/**
+ * The cases that resume a conversation read its transcript under Claude's
+ * folder for the project, named as darwin and linux name it (resume-session.ts:
+ * `/` and `.` to `-`). This file runs as linux on any host; on a Windows
+ * host the project is a Windows path, whose `:` and `\` no folder name can
+ * hold, so the transcript those cases resume from has nowhere to go. They run
+ * on macOS and Linux; the Windows name is held by resume-session.test.ts.
+ */
+const NO_POSIX_TRANSCRIPT_FOLDER = process.platform === 'win32';
+
 describe('a session the API starts', () => {
-  it("runs on the agent's model, not on the one its last session answered on", async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)("runs on the agent's model, not on the one its last session answered on", async () => {
     lastSessionAnsweredOn('claude-opus-5');
 
     const command = await dispatch({ model: 'claude-opus-5-5', effort: 'max', resumableSessionId: LAST_SESSION });

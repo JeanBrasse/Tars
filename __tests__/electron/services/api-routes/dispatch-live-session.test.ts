@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -67,6 +67,17 @@ import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
+
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-dispatch-live-'));
 
 let routes: RouteApp;
@@ -97,7 +108,7 @@ async function call(method: string, url: string, body: Record<string, unknown>, 
  */
 function worker(status: AgentStatus['status'], foreground: string, args = ['-l']): { agent: AgentStatus; terminal: FakePty } {
   const terminal = spawnAgentPty({
-    binaryName: 'claude', shell: '/bin/bash', args, cwd: project, cols: 120, rows: 30,
+    binaryName: 'claude', shell: '/bin/bash', args, runsCommand: args.includes('-c'), cwd: project, cols: 120, rows: 30,
     env: { CLAUDE_AGENT_ID: 'worker' },
   }) as unknown as FakePty;
   terminal.process = foreground;
@@ -199,7 +210,8 @@ describe('a session the API started', () => {
     expect(spawned).toHaveLength(1);
     const [login, dashC, command] = spawned[0].spawnedWith;
     expect([login, dashC]).toEqual(['-l', '-c']);
-    expect(command).toMatch(new RegExp(`^cd '${project}' && exec '`));
+    // The path escaped for the pattern: a Windows path's `\` would read as escapes.
+    expect(command).toMatch(new RegExp(`^cd '${project.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}' && exec '`));
   });
 
   it('takes a /dispatch at its prompt into the same session, as on 2026-09-23 at 02:22:24 it did not', async () => {

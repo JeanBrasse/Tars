@@ -20,10 +20,12 @@ vi.mock('../../../electron/utils/decode-project-path', async (importOriginal) =>
 });
 
 import { projectFolders, decodedProjectPath, resetProjectIndex, REDECODE_MS } from '../../../electron/services/project-index';
+import { encodeClaudeProjectDir } from '../../../electron/platform';
 
 let tmp: string;
 let root: string;
-const encode = (p: string) => p.replace(/[/.]/g, '-');
+// Claude Code's own folder name. `[/.]` left a Windows path's drive and backslashes in it.
+const encode = encodeClaudeProjectDir;
 
 beforeEach(() => {
   resetProjectIndex();
@@ -83,7 +85,8 @@ describe('the project index', () => {
   it('lists folders and links to folders, not files, and nothing for a missing root', async () => {
     fs.mkdirSync(path.join(root, '-a'));
     fs.mkdirSync(path.join(tmp, 'elsewhere'));
-    fs.symlinkSync(path.join(tmp, 'elsewhere'), path.join(root, '-b'));
+    // A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
+    fs.symlinkSync(path.join(tmp, 'elsewhere'), path.join(root, '-b'), 'junction');
     fs.writeFileSync(path.join(root, '.DS_Store'), '');
 
     expect((await projectFolders(root)).map(f => f.name).sort()).toEqual(['-a', '-b']);

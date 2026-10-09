@@ -80,6 +80,7 @@ vi.mock('https', () => {
 
 import { isSafeTelegramPath } from '../../electron/services/api-routes/utils';
 import * as constants from '../../electron/constants';
+import { moveTestHome } from '../setup/test-home';
 
 const home = os.homedir();
 const PRIVATE_FILES = [
@@ -178,7 +179,8 @@ describe('the guard of the app\'s own Telegram routes', () => {
     const link = path.join(home, 'Documents', 'keys');
     fs.mkdirSync(path.dirname(link), { recursive: true });
     fs.rmSync(link, { force: true });
-    fs.symlinkSync(ssh, link);
+    // A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
+    fs.symlinkSync(ssh, link, 'junction');
     aliases.push(path.join(link, 'id_rsa'));
     for (const alias of aliases) expect(isSafeTelegramPath(alias), alias).toBe(false);
     // The witness: an ordinary file that exists still goes.
@@ -221,7 +223,7 @@ describe('the guard of the app\'s own Telegram routes', () => {
     fs.copyFileSync(PRIVATE_FILES[1], copy);
     const exit = path.join(home, '.tars-private', 'to-documents');
     fs.rmSync(exit, { force: true });
-    fs.symlinkSync(docs, exit);
+    fs.symlinkSync(docs, exit, 'junction');
     try {
       expect(isSafeTelegramPath(second), 'a file with two ordinary names').toBe(true);
       expect(isSafeTelegramPath(copy), 'a copy is another file').toBe(true);
@@ -312,12 +314,11 @@ describe('the guard of the app\'s own Telegram routes', () => {
 
 describe('the Telegram MCP server, which every agent is given', () => {
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-telegram-home-'));
-  let savedHome: string | undefined;
+  let restoreHome: () => void;
 
   beforeAll(async () => {
-    savedHome = process.env.HOME;
-    // The server reads its settings from the HOME it starts in.
-    process.env.HOME = tmpHome;
+    // The server reads its settings from the home it starts in.
+    restoreHome = moveTestHome(tmpHome);
     fs.mkdirSync(path.join(tmpHome, '.dorothy'), { recursive: true });
     fs.writeFileSync(path.join(tmpHome, '.dorothy', 'app-settings.json'), JSON.stringify({
       telegramBotToken: 'not-a-real-bot', telegramChatId: '1',
@@ -327,7 +328,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
   });
 
   afterAll(() => {
-    process.env.HOME = savedHome;
+    restoreHome();
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
@@ -370,7 +371,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
       fs.copyFileSync(secret, copy);
       const exit = path.join(tmpHome, '.tars-private', 'to-documents');
       fs.rmSync(exit, { force: true });
-      fs.symlinkSync(docs, exit);
+      fs.symlinkSync(docs, exit, 'junction');
       try {
         for (const file of [link(first, 'store-second.pdf'), copy]) {
           const result = await send({ [arg]: file });
@@ -407,7 +408,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
       const link = path.join(tmpHome, 'Documents', `looks-harmless-${tool}`);
       fs.mkdirSync(path.dirname(link), { recursive: true });
       fs.rmSync(link, { force: true });
-      fs.symlinkSync(path.dirname(secret), link);
+      fs.symlinkSync(path.dirname(secret), link, 'junction');
       const aliases = [path.join(link, 'hermes-webhook-secret')];
       const upper = path.join(tmpHome, '.TARS-PRIVATE', 'hermes-webhook-secret');
       if (fs.existsSync(upper)) aliases.push(upper);

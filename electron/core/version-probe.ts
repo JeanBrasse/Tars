@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { refuseWhileQuitting } from './quit-state';
+import { resolveCliBinary, killTree } from '../platform';
 
 /**
  * `<binary> --version`, run so that the quit ends it.
@@ -19,6 +20,14 @@ const running = new Set<ChildProcess>();
 /** The probe's whole group, then the probe itself should it have left it. */
 function end(child: ChildProcess): void {
   if (child.pid === undefined) return;
+  // Windows has no process groups: taskkill /T ends the probe and what it
+  // started, while the probe runs. Once Node has read its exit, its id is free
+  // and Windows may have handed it to another process, whose tree /T would end
+  // (as acp/client.ts's endProcessTreeOnWindows; version-probe-windows.test.ts).
+  if (process.platform === 'win32') {
+    if (child.exitCode === null && child.signalCode === null) void killTree(child.pid).catch(() => {});
+    return;
+  }
   try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
   try { child.kill('SIGKILL'); } catch { /* already gone */ }
 }
@@ -33,10 +42,18 @@ export function probeVersion(
   } catch (err) {
     return Promise.reject(err);
   }
+  // On Windows the binary as the platform layer finds it: an npm .cmd shim
+  // cannot be started without a shell (EINVAL), so it is read through to node
+  // and its script. Elsewhere it is the binary as given.
+  const cli = resolveCliBinary(binary, env, process.platform);
+  if (!cli.ok) return Promise.reject(new Error(cli.detail));
   return new Promise((resolve, reject) => {
     // detached: a group of its own, which end() can signal whole; a timeout on
-    // the binary alone would leave what it started running.
-    const child = spawn(binary, ['--version'], { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    // the binary alone would leave what it started running. Not on Windows,
+    // where it would open a console of its own and taskkill ends the tree.
+    const child = spawn(cli.file, [...cli.prefixArgs, '--version'], {
+      env, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    });
     running.add(child);
     let stdout = '';
     let stderr = '';

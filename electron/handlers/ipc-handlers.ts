@@ -39,9 +39,10 @@ import { landsUnderSafeRoot } from '../utils/real-target';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-switch';
-import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
+import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
+import { killPty } from '../core/pty-kill';
 import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
-import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
+import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
 import { emitAgentStatus } from '../services/agent-events';
@@ -62,7 +63,9 @@ import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
-import { spawnAgentPty, cliRunningIn } from '../core/agent-pty';
+import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
+import { resolveShell, shellArgs, childEnv, toLaunch, withPath, resolveCliBinary, cliEnv } from '../platform';
+import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
@@ -197,14 +200,14 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('pty:create', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
     refuseWhileQuitting('terminal');
     const id = uuidv4();
-    const shell = defaultShell();
+    const shell = resolveShell({ setting: deps.getAppSettings().terminalShell });
 
-    const ptyProcess = pty.spawn(shell, ['-l'], {
+    const ptyProcess = pty.spawn(shell, shellArgs(shell), {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
       cwd: cwd || os.homedir(),
-      env: process.env as { [key: string]: string },
+      env: childEnv(shell, process.env) as { [key: string]: string },
     });
 
     ptyProcesses.set(id, ptyProcess);
@@ -247,7 +250,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('pty:kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = ptyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       ptyProcesses.delete(id);
       return { success: true };
     }
@@ -293,7 +296,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     cliPath?: string;
   }) => {
     const id = uuidv4();
-    const shell = '/bin/bash';
+    const { shell, args: shellArgv } = agentShell({ setting: getAppSettings().terminalShell });
 
     // Validate effort against allowed values to prevent shell injection
     const VALID_EFFORTS: AgentEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -415,13 +418,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       ptyProcess = spawnAgentPty({
         binaryName: agentProvider.binaryName,
         shell,
-        args: ['-l'],
+        args: shellArgv,
+        runsCommand: false,
         cols: 120,
         rows: 30,
         cwd,
         env: {
-          ...cleanEnv,
-          PATH: fullPath,
+          ...withPath(cleanEnv, fullPath, process.platform),
           ...providerEnvVars,
         },
       });
@@ -569,6 +572,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       throw new Error(`Invalid model name: ${options.model}`);
     }
 
+    // win32: a CLI typed by hand into the agent's shell, whose session
+    // registered from it, is refused here, before anything below kills that
+    // shell (a terminal left in another folder, the local provider's own).
+    // Nothing on darwin and linux, where the guard after it reads the terminal.
+    const handTyped = agent.ptyId && ptyProcesses.has(agent.ptyId) ? cliStartRefusal(agent) : undefined;
+    if (handTyped) return { success: false, cliRunning: true, error: handTyped };
+
     // If the agent's worktreePath changed after the PTY was spawned, the
     // existing PTY is stuck in the wrong cwd. Kill it so initAgentPty below
     // respawns with the correct working directory.
@@ -624,7 +634,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       refuseWhileQuitting('agent terminal');
       const oldPty = ptyProcesses.get(agent.ptyId!);
       if (oldPty) {
-        oldPty.kill();
+        killPty(oldPty);
         ptyProcesses.delete(agent.ptyId!);
       }
 
@@ -655,14 +665,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // real fleet id. Exactly the damage the same variable fixed elsewhere.
       const newPty = spawnAgentPty({
         binaryName: getProvider('claude').binaryName,
-        shell: '/bin/bash',
-        args: ['-l'],
+        ...agentShell({ setting: currentSettings.terminalShell }),
+        runsCommand: false,
         cols: 120,
         rows: 30,
         cwd,
         env: {
-          ...cleanEnvLocal,
-          PATH: fullPathForLocal,
+          ...withPath(cleanEnvLocal, fullPathForLocal, process.platform),
           ...localProviderEnvVars,
           // Tasmania-specific env vars:
           // - ANTHROPIC_BASE_URL without /v1 (SDK appends /v1/messages)
@@ -839,6 +848,16 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       orchestratorMode: isSuperAgentCheck,
     });
 
+    // How the command starts (platform/launch.ts): typed into the shell on
+    // darwin and linux, the CLI in the shell's place on win32.
+    // Worked out before the status says it runs: a CLI Windows cannot start,
+    // or a shell it may not replace, leaves the agent as it was.
+    const start = toLaunch(command, agent.worktreePath || agent.projectPath, agentPtyEnv(ptyProcess) ?? process.env);
+    const refused = cliStartRefusal(agent, start);
+    if (refused) return { success: false, cliRunning: true, error: refused };
+    // What the agent was, should its CLI's terminal fail to open below.
+    const before = { status: agent.status, currentTask: agent.currentTask, waitingReason: agent.waitingReason, savedPrompt: agent.savedPrompt };
+
     // Persist the prompt for future re-launches and update status. Working
     // only with a task. A start without one, which is every start from the
     // Dashboard, autostart included, and every restart, brings the CLI up at
@@ -859,8 +878,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
     agent.lastActivity = new Date().toISOString();
     // Started from the Agents page, which never touches the API and so was
-    // the one path with no check on whether the task actually landed.
-    armTaskStartWatch(agent, agent.ptyId, promptWithMemory);
+    // the one path with no check on whether the task actually landed. Armed
+    // on the terminal the CLI runs in: here on darwin and linux, the shell the
+    // line is typed into; on win32 below, once the CLI's terminal is open.
+    if (start.platform !== 'win32') armTaskStartWatch(agent, agent.ptyId, promptWithMemory);
     broadcastToAllWindows('agent:status', {
       type: 'status',
       agentId: id,
@@ -869,25 +890,30 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     });
     scheduleTick();
 
-    // First cd to the appropriate directory (worktree if exists, otherwise project), then run claude
-    const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
-    const fullCommand = `cd '${workingPath}' && ${command}`;
-
+    // First cd to the appropriate directory (worktree if exists, otherwise project), then run claude.
     // Wait for the shell to initialize before writing the command.
     // A freshly-spawned PTY needs time for bash to start up (~200ms).
     // Local provider always recreates the PTY, so it always needs the delay.
     const needsDelay = ptyJustCreated || provider === 'local';
-    if (needsDelay) {
-      await new Promise<void>((resolve) => {
-        setTimeout(() => {
-          writeProgrammaticInput(ptyProcess, fullCommand);
-          resolve();
-        }, 500);
-      });
-    } else {
-      writeProgrammaticInput(ptyProcess, fullCommand);
+    let cliProcess: pty.IPty;
+    try {
+      cliProcess = await launchIntoTerminal(agent, ptyProcess, start, { ptyProcesses, initAgentPty, delayMs: needsDelay ? 500 : 0 });
+    } catch (err) {
+      // win32 only, where the CLI's terminal is opened here: it never ran, so
+      // the agent is what it was before this start said it did, and the
+      // caller hears why. A line typed into a shell, on darwin and linux, is
+      // left as it always was.
+      if (start.platform === 'win32') {
+        Object.assign(agent, before);
+        agent.lastActivity = new Date().toISOString();
+        saveAgents();
+        broadcastToAllWindows('agent:status', { type: 'status', agentId: id, status: agent.status, timestamp: agent.lastActivity });
+        scheduleTick();
+      }
+      throw err;
     }
-    noteLaunch(ptyProcess, launched);
+    noteLaunch(cliProcess, launched);
+    if (start.platform === 'win32') armTaskStartWatch(agent, agent.ptyId, promptWithMemory);
 
     // Save updated status
     saveAgents();
@@ -1084,7 +1110,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // the next start/dispatch respawns with the new provider's env.
         const staleProviderPty = ptyProcesses.get(agent.ptyId);
         if (staleProviderPty) {
-          staleProviderPty.kill();
+          killPty(staleProviderPty);
           ptyProcesses.delete(agent.ptyId);
         }
         agent.ptyId = undefined;
@@ -1110,7 +1136,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // with the old binary.
         const staleCliPty = ptyProcesses.get(agent.ptyId);
         if (staleCliPty) {
-          staleCliPty.kill();
+          killPty(staleCliPty);
           ptyProcesses.delete(agent.ptyId);
         }
         agent.ptyId = undefined;
@@ -1262,7 +1288,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        ptyProcess.kill();
+        killPty(ptyProcess);
         ptyProcesses.delete(agent.ptyId);
       }
       // Nullify so pending onExit callbacks won't mutate state
@@ -1458,12 +1484,12 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
 
     const fullPath = buildFullPath();
     refuseWhileQuitting('skill install');
-    const ptyProcess = pty.spawn('npx', npxArgs, {
+    const ptyProcess = spawnSkillInstallerOnWindows(npxArgs, { cols, rows }, withPath(process.env, fullPath, process.platform)) ?? pty.spawn('npx', npxArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
       cwd: os.homedir(),
-      env: { ...process.env, PATH: fullPath } as { [key: string]: string },
+      env: withPath(process.env, fullPath, process.platform) as { [key: string]: string },
     });
 
     skillPtyProcesses.set(id, ptyProcess);
@@ -1506,7 +1532,7 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('skill:install-kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = skillPtyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       skillPtyProcesses.delete(id);
       return { success: true };
     }
@@ -1637,11 +1663,11 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
     }
 
     const id = uuidv4();
+    const env = withPath(process.env, buildFullPath(), process.platform) as { [key: string]: string };
     const shell = defaultShell();
 
     // If the command starts with /, it's a Claude CLI slash command - prefix with 'claude'
     const finalCommand = command.startsWith('/') ? `claude "${command}"` : command;
-    const fullPath = buildFullPath();
 
     // Use -c to run the command directly, skipping rc files to avoid
     // compdef/completion errors from the user's shell config
@@ -1650,12 +1676,14 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
       : ['-c', finalCommand];
 
     refuseWhileQuitting('plugin install');
+    const onWindows = startPluginInstallOnWindows(id, command, { cols, rows }, env, pluginPtyProcesses, getMainWindow);
+    if (onWindows) return onWindows;
     const ptyProcess = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
       cwd: os.homedir(),
-      env: { ...process.env, PATH: fullPath } as { [key: string]: string },
+      env,
     });
 
     pluginPtyProcesses.set(id, ptyProcess);
@@ -1698,7 +1726,7 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('plugin:install-kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = pluginPtyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       pluginPtyProcesses.delete(id);
       return { success: true };
     }
@@ -1943,11 +1971,14 @@ function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
       // ready, and started from 'Unknown', so a missing claude read as ready.
       // Resolved the way an agent launch resolves it: the path set in
       // Settings > CLI Paths, else 'claude' on the PATH built with those
-      // folders, not on Electron's own.
+      // folders, not on Electron's own. By argv, and on Windows the claude
+      // found there (a .exe, or an npm shim read through to node and its
+      // script), which libuv could not start by its bare name.
       const cliPaths = deps.getAppSettings()?.cliPaths;
+      const env = withPath(process.env, buildFullPath(cliPathDirs(cliPaths)), process.platform);
       let claudeVersion = '';
       try {
-        const { stdout } = await probeVersion(cliPaths?.claude || 'claude', { ...process.env, PATH: buildFullPath(cliPathDirs(cliPaths)) });
+        const { stdout } = await probeVersion(cliPaths?.claude || 'claude', env as NodeJS.ProcessEnv);
         claudeVersion = stdout.trim();
       } catch {
         // Not installed, not on that PATH, or it failed: not ready.
@@ -2825,12 +2856,28 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
       // Fallback: also check via claude mcp list if not found
       if (!configured) {
         try {
-          const { exec } = await import('child_process');
+          const { exec, execFile } = await import('child_process');
           await new Promise<void>((resolve) => {
-            exec('claude mcp list', { timeout: 3000 }, (_err, stdout) => {
+            const done = (_err: Error | null, stdout: string) => {
               if (stdout) configured = stdout.includes('tasmania');
               resolve();
-            });
+            };
+            // darwin/linux: the line /bin/sh has always run. win32: the claude
+            // found (a .exe, or an npm claude.cmd read through to node and its
+            // script), by argv, with no cmd.exe.
+            if (process.platform !== 'win32') {
+              exec('claude mcp list', { timeout: 3000 }, done);
+              return;
+            }
+            // Looked up on the PATH an agent gets, as execCli does, and started
+            // with no console window.
+            const env = (cliEnv('win32') ?? process.env) as NodeJS.ProcessEnv;
+            const claude = resolveCliBinary('claude', env, 'win32');
+            if (!claude.ok) {
+              resolve();
+              return;
+            }
+            execFile(claude.file, [...claude.prefixArgs, 'mcp', 'list'], { timeout: 3000, env, windowsHide: true }, done);
           });
         } catch {
           // claude CLI not available
@@ -2857,8 +2904,8 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
         return { success: false, error: `MCP server not found at ${serverPath}` };
       }
 
-      const command = serverPath.endsWith('.ts') ? 'npx' : 'node';
-      const args = serverPath.endsWith('.ts') ? ['tsx', serverPath] : [serverPath];
+      // As each CLI will start it, the orchestrator's rule: on Windows `npx` is a .cmd no CLI can spawn.
+      const { command, args } = (await import('../providers/cli-exec')).nodeServerCommand(serverPath, 'tasmania');
 
       const { getAllProviders } = await import('../providers');
       const providers = getAllProviders();
@@ -3038,12 +3085,16 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   });
 
   ipcMain.handle('shell:version', async (_event, { binary }: { binary: string }) => {
-    // A path from settings or a bare binary name, never an expression.
-    if (!binary || /[;&|`$<>(){}\n\r"']/.test(binary)) {
+    // A path from settings or a bare binary name, never an expression. On
+    // Windows parentheses belong to paths (`Program Files (x86)`), and nothing
+    // here goes through a shell that would read them.
+    const refused = process.platform === 'win32' ? /[;&|`$<>{}\n\r"']/ : /[;&|`$<>(){}\n\r"']/;
+    if (!binary || refused.test(binary)) {
       return { success: false, error: 'invalid binary' };
     }
     try {
-      const { stdout, stderr } = await probeVersion(binary, { ...process.env, PATH: buildFullPath() });
+      const env = withPath(process.env, buildFullPath(), process.platform) as NodeJS.ProcessEnv;
+      const { stdout, stderr } = await probeVersion(binary, env);
       return { success: true, output: (stdout || stderr || '').trim() };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -3075,14 +3126,14 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('shell:startPty', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
     refuseWhileQuitting('terminal');
     const id = uuidv4();
-    const shell = defaultShell();
+    const shell = resolveShell({ setting: deps.getAppSettings().terminalShell });
 
-    const ptyProcess = pty.spawn(shell, ['-l'], {
+    const ptyProcess = pty.spawn(shell, shellArgs(shell), {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
       cwd: cwd || os.homedir(),
-      env: process.env as { [key: string]: string },
+      env: childEnv(shell, process.env) as { [key: string]: string },
     });
 
     quickPtyProcesses.set(id, ptyProcess);
@@ -3125,7 +3176,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('shell:killPty', async (_event, { ptyId }: { ptyId: string }) => {
     const ptyProcess = quickPtyProcesses.get(ptyId);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       quickPtyProcesses.delete(ptyId);
       return { success: true };
     }

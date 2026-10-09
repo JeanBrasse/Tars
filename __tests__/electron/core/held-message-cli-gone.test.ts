@@ -76,13 +76,36 @@ describe('a held message', () => {
 });
 
 describe('whether an agent\'s CLI stopped', () => {
+  const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const readAs = (platform: NodeJS.Platform) => Object.defineProperty(process, 'platform', { ...hostPlatform, value: platform });
+  afterEach(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
   it('4. is read from the terminal Tars started: stopped at its shell, not while the CLI runs, unknown otherwise', async () => {
+    // What node-pty names in front is read on darwin and linux: a Windows host
+    // reads this as linux, and Windows itself is the case below.
+    if (process.platform === 'win32') readAs('linux');
     const { spawnAgentPty, cliStoppedIn } = await import('../../../electron/core/agent-pty');
     const t = spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: '/tmp', cols: 80, rows: 24, env: {} });
     foreground.value = '2.1.280';
     expect(cliStoppedIn(t)).toBe(false);
     foreground.value = 'bash';
     expect(cliStoppedIn(t)).toBe(true);
+    expect(cliStoppedIn({ process: 'bash' } as unknown as IPty)).toBe(false);
+  });
+
+  it('4. on Windows, is read from what the terminal was started as: stopped in the shell an agent waits in, not in the CLI started as its process, unknown otherwise', async () => {
+    const { spawnAgentPty, cliStoppedIn } = await import('../../../electron/core/agent-pty');
+    // Nothing Tars starts runs in the shell there: a start replaces it with the
+    // CLI (startCliInTerminal), so a message for that shell would run in it.
+    const cli = spawnAgentPty({ binaryName: 'claude', shell: 'C:\\Users\\me\\.local\\bin\\claude.exe', args: '--model opus', runsCommand: true, cwd: '/tmp', cols: 80, rows: 24, env: {} });
+    const shell = spawnAgentPty({ binaryName: 'claude', shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', args: ['-NoLogo'], runsCommand: false, cwd: '/tmp', cols: 80, rows: 24, env: {} });
+    readAs('win32');
+    // node-pty there names the terminal, never what runs in it (audit A6): whatever it says decides nothing.
+    for (const named of ['2.1.280', 'bash', 'xterm-256color']) {
+      foreground.value = named;
+      expect(cliStoppedIn(cli), named).toBe(false);
+      expect(cliStoppedIn(shell), named).toBe(true);
+    }
     expect(cliStoppedIn({ process: 'bash' } as unknown as IPty)).toBe(false);
   });
 });

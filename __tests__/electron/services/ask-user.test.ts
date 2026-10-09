@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * ask_user: a project's orchestrator asks the user a question on their Telegram, through their Hermes (the relay,
@@ -45,6 +46,8 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
 /** What runs in the terminals spawned next: claude's version, or `bash` at its prompt. */
 const foreground = vi.hoisted(() => ({ value: '2.1.286' }));
 const typed = vi.hoisted(() => ({} as Record<string, string[]>));
+/** What listens to each agent's terminal ending, to end it as its process would. */
+const exits = vi.hoisted(() => ({} as Record<string, Array<(e: { exitCode: number }) => void>>));
 vi.mock('node-pty', () => ({
   spawn: vi.fn((_file: string, _args: string[], opts: { env?: Record<string, string> }) => {
     const id = opts?.env?.CLAUDE_AGENT_ID ?? 'unknown';
@@ -52,10 +55,25 @@ vi.mock('node-pty', () => ({
     return {
       pid: 4242, get process() { return foreground.value; },
       write: vi.fn((data: string) => { typed[id].push(data); }),
-      kill: vi.fn(), resize: vi.fn(), onData: vi.fn(), onExit: vi.fn(),
+      kill: vi.fn(), resize: vi.fn(), onData: vi.fn(),
+      onExit: vi.fn((fn: (e: { exitCode: number }) => void) => { (exits[id] ??= []).push(fn); return { dispose() {} }; }),
     };
   }),
 }));
+
+/**
+ * The terminal an agent is given, as Tars opens one. darwin and linux: a shell,
+ * with a CLI or nothing in front as node-pty names it (`foreground`). win32:
+ * node-pty names only the terminal there (audit A6), so a CLI runs in a
+ * terminal whose own process it is (decision D2, cliRunningIn), and a terminal
+ * at its shell is the one an agent waits in, where no CLI Tars starts runs.
+ */
+function terminalShape() {
+  if (process.platform !== 'win32') return { shell: '/bin/bash', args: ['-l'] };
+  return foreground.value === 'bash'
+    ? { shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', args: ['-NoLogo'], runsCommand: false }
+    : { shell: 'C:\\Users\\someone\\.local\\bin\\claude.exe', args: '', runsCommand: true };
+}
 vi.mock('electron', () => ({
   app: { getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), isPackaged: false, getVersion: () => '1.9.2' },
   BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
@@ -101,7 +119,7 @@ const questions = () => fake.sends.filter(s => s.kind === 'question');
 function agent(id: string, name: string, opts: { withCli?: boolean; role?: 'orchestrator' | 'worker' } = {}): AgentStatus {
   const a = { id, name, status: 'running', provider: 'claude', projectPath: PROJECT, role: opts.role === 'worker' ? undefined : 'orchestrator', skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
   if (opts.withCli !== false) {
-    const term = spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: id } });
+    const term = spawnAgentPty({ binaryName: 'claude', ...terminalShape(), cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: id } });
     ptyProcesses.set(`pty-${id}`, term as unknown);
     a.ptyId = `pty-${id}`;
   }
@@ -127,6 +145,7 @@ afterAll(async () => {
 beforeEach(async () => {
   relay?.stopHermesRelay();
   for (const key of Object.keys(typed)) delete typed[key];
+  for (const key of Object.keys(exits)) delete exits[key];
   foreground.value = '2.1.286';
   relayOn = true;
   fake.mode = 'ok';
@@ -279,7 +298,10 @@ describe('an answer that waited, and never went in', () => {
     await answer('Use the staging database.', T0 + 1000);
     await settle();
     expect(notices().at(-1)).toBe('Passed to Asker: it waits for what is typed in its terminal to be sent or cleared.');
-    foreground.value = 'bash';
+    // The CLI stops. On darwin and linux its terminal is back at the shell; on
+    // win32 the CLI was the terminal's process, and the terminal ends with it.
+    if (process.platform === 'win32') for (const fn of exits.a1 ?? []) fn({ exitCode: 0 });
+    else foreground.value = 'bash';
     await new Promise(r => setTimeout(r, pm.TYPING_PAUSE_MS + 1500));
 
     expect(all('a1')).not.toContain('staging database');
@@ -351,7 +373,7 @@ describe('across a restart', () => {
     agent('a1', 'Asker');
     await q.askUser({ agentId: 'a1', question: 'Which database?' }, T0);
     const file = path.join(os.homedir(), '.tars-private', 'user-questions.json');
-    expect(fs.statSync(file).mode & 0o077).toBe(0);
+    if (hasPosixModes()) expect(fs.statSync(file).mode & 0o077).toBe(0);
     expect(fs.existsSync(path.join(os.homedir(), '.dorothy', 'user-questions.json'))).toBe(false);
     const asked = questions()[0].messageId;
 

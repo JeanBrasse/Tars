@@ -16,6 +16,7 @@
  *   not run read as signed out.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -49,7 +50,7 @@ afterEach(() => {
   rb.queue.length = 0;
 });
 
-describe('folder guards, one check at a time', () => {
+describe.skipIf(claudeAccountsNotPorted())('folder guards, one check at a time', () => {
   it('a real, owner-only folder with a good id under another parent is not an account folder', () => {
     ownFolder(root());
     const elsewhere = ownFolder(path.join(home(), 'elsewhere', freshId()));
@@ -82,7 +83,7 @@ describe('folder guards, one check at a time', () => {
   });
 });
 
-describe('registry ids', () => {
+describe.skipIf(claudeAccountsNotPorted())('registry ids', () => {
   it('an id with anything after its six digits is not an account, whatever it points at', () => {
     fs.mkdirSync(path.dirname(accountsFile()), { recursive: true });
     fs.writeFileSync(accountsFile(), JSON.stringify({ accounts: [
@@ -111,7 +112,7 @@ describe('registry ids', () => {
   });
 });
 
-describe('claude auth status, what it answers', () => {
+describe.skipIf(claudeAccountsNotPorted())('claude auth status, what it answers', () => {
   function fakeAnswer(stdout: string, code: number): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-answer-'));
     const bin = path.join(dir, 'claude');

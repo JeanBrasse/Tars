@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { renameReplacingSync } from '../platform/rename-replacing';
 
 /** What updateSharedJsonSync did. */
 export type SharedJsonOutcome =
@@ -42,6 +43,10 @@ const ATTEMPTS = 3;
  * the meantime the change is started over from what it holds now. What is left
  * is a write landing between that last read and the rename, which is a
  * single system call away.
+ *
+ * On Windows that rename fails while a reader holds the file open, and these
+ * files are read all the time; it is retried for about a second
+ * (platform/rename-replacing.ts).
  */
 export function updateSharedJsonSync<T>(
   filePath: string,
@@ -85,7 +90,7 @@ export function updateSharedJsonSync<T>(
         removeTemp(tmp);
         continue;
       }
-      fs.renameSync(tmp, target);
+      renameReplacingSync(tmp, target);
       return 'written';
     } catch (err) {
       removeTemp(tmp);

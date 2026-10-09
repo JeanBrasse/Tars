@@ -66,7 +66,18 @@ vi.mock('../../../electron/core/pty-manager', () => ({
   writeProgrammaticInput: vi.fn(),
   rememberTerminalOwner: vi.fn(),
 }));
-vi.mock('../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
+vi.mock('../../../electron/utils/path-builder', async () => {
+  if (process.platform !== 'win32') return { buildFullPath: vi.fn(() => '/usr/bin') };
+  // On Windows the direct launch (D2) resolves codex to a file on this PATH
+  // before it opens the terminal: a stand-in codex.exe, never run (pty.spawn
+  // is mocked).
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-'));
+  fs.writeFileSync(path.join(dir, 'codex.exe'), '');
+  return { buildFullPath: vi.fn(() => dir) };
+});
 
 import { assembleDigest } from '../../../electron/services/memory-hub';
 import { registerMemoryRoutes } from '../../../electron/services/api-routes/memory-routes';

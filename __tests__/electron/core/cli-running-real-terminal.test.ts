@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as path from 'node:path';
 import type * as pty from 'node-pty';
 import { spawnAgentPty, cliRunningIn } from '../../../electron/core/agent-pty';
+import { skipOnWindows } from '../../setup/platform-limits';
 
 /**
  * What runs in an agent's terminal, read from a real one.
@@ -23,11 +24,20 @@ import { spawnAgentPty, cliRunningIn } from '../../../electron/core/agent-pty';
  * its name (`sleep`); cliRunningIn takes either, and so does `until`.
  */
 
+/**
+ * Windows opens neither shape: an agent's CLI is the terminal's own process
+ * and a person's terminal is PowerShell, and ConPTY does not name the process
+ * in front, a known limit there. What it opens there is held by
+ * agent-terminal-win32.test.ts.
+ */
+const posixTerminal = () => skipOnWindows('these open bash terminals, the shapes Tars opens on macOS and Linux; '
+  + 'Windows starts the CLI as the terminal\'s own process, held by agent-terminal-win32.test.ts');
+
 const opened: pty.IPty[] = [];
 
 function open(args: string[]): pty.IPty {
   const terminal = spawnAgentPty({
-    binaryName: 'claude', shell: '/bin/bash', args, cwd: '/tmp', cols: 80, rows: 24,
+    binaryName: 'claude', shell: '/bin/bash', args, runsCommand: args.includes('-c'), cwd: '/tmp', cols: 80, rows: 24,
     env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TERM: 'xterm-256color' },
   });
   opened.push(terminal);
@@ -59,7 +69,7 @@ afterEach(() => {
   }
 });
 
-describe('the terminal spawnAgentSession opens', () => {
+describe.skipIf(posixTerminal())('the terminal spawnAgentSession opens', () => {
   it('names the CLI once the shell has handed it the terminal, and reads as a CLI until it ends', async () => {
     const terminal = open(['-l', '-c', "cd '/tmp' && exec '/bin/sleep' 2"]);
     const gone = exited(terminal);
@@ -119,7 +129,7 @@ describe('the terminal spawnAgentSession opens', () => {
   }, 30_000);
 });
 
-describe('an interactive shell, as the Dashboard and a restart open one', () => {
+describe.skipIf(posixTerminal())('an interactive shell, as the Dashboard and a restart open one', () => {
   it('reads as no CLI at its prompt, as one while a typed command runs, and as none again after', async () => {
     const terminal = open(['-l']);
 

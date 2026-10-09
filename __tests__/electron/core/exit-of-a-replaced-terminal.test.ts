@@ -61,20 +61,22 @@ vi.mock('../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(()
 
 import { initAgentPty, agents } from '../../../electron/core/agent-manager';
 import type { AgentStatus } from '../../../electron/types';
+import { moveTestHome } from '../../setup/test-home';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-exit-home-'));
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-exit-cwd-'));
-let realHome: string | undefined;
+let restoreHome: () => void;
 
 beforeEach(() => {
   terminals.length = 0;
   sent.length = 0;
   agents.clear();
-  realHome = process.env.HOME;
-  process.env.HOME = home;
+  // HOME alone on macOS and Linux; on Windows os.homedir() reads USERPROFILE,
+  // which moves with it (setup/test-home.ts).
+  restoreHome = moveTestHome(home);
   expect(os.homedir()).toBe(home);
 });
-afterEach(() => { process.env.HOME = realHome; });
+afterEach(() => { restoreHome(); });
 
 function agent(): AgentStatus {
   const a = { id: 'a1', name: 'Backend', status: 'running', projectPath: cwd, skills: [], output: [], provider: 'claude', lastActivity: new Date().toISOString() } as unknown as AgentStatus;

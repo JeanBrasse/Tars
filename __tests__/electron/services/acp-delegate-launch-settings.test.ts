@@ -18,7 +18,9 @@ import * as path from 'node:path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-settings-'));
-afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+// Retried: on Windows the run's agent, whose working directory this is, is
+// ended by taskkill after the delegation has answered (acp/client.ts stop).
+afterAll(() => fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 const FAKE_AGENT = `
 let buf = '';

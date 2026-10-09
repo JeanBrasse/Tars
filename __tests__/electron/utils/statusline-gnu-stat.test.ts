@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
  * The status line's git cache, on a GNU system (Linux).
@@ -25,6 +26,7 @@ let script: string;
 const dirs: string[] = [];
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it');
   enableStatusLine();
@@ -64,7 +66,7 @@ function bench(flavour: 'gnu' | 'bsd') {
 // average 28 to 87), and both cases were cut at vitest's 5 s in the full suite
 // at 47 to 137, at the gates of batches 1 and 2 that day. 30 s, as #295 gave
 // the cases of its kind.
-describe('the git cache of the status line', { timeout: 30_000 }, () => {
+describe.skipIf(shHooksNotShipped())('the git cache of the status line', { timeout: 30_000 }, () => {
   it('1. is reused within its TTL on GNU stat', () => {
     const b = bench('gnu');
     b.render();

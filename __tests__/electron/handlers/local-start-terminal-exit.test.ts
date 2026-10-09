@@ -18,9 +18,20 @@
  *
  * The handler is the real one; node-pty and Tasmania's status are replaced.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+// The terminal these hold is darwin and linux's: the local switch's shell,
+// which the launch is typed into and which is then the agent's own. On a
+// Windows host they read it as linux; on win32 that shell is killed for the
+// CLI started in its place (held by launch-call-sites.test.ts, 8), and the
+// CLI's terminal ends as initAgentPty's (exit-of-a-replaced-terminal.test.ts).
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
 
 const { tmpHome } = vi.hoisted(() => ({
   tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-local-exit-${process.pid}-${Date.now()}`,
