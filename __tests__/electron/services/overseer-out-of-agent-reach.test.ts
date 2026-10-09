@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { format } from 'util';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * Noah's conversation with the super chat leaves the directory the agents are
@@ -130,7 +131,7 @@ describe('a conversation still in the directory the agents are handed', () => {
     expect(fs.readFileSync(PRIVATE, 'utf-8')).toBe(conversation(NOAH_SAID));
   });
 
-  it('lands at 0600, where it used to sit at 0644 for every account on the machine', async () => {
+  it.skipIf(!hasPosixModes())('lands at 0600, where it used to sit at 0644 for every account on the machine', async () => {
     fs.writeFileSync(LEGACY, conversation(NOAH_SAID), { mode: 0o644 });
 
     await start();
@@ -218,7 +219,7 @@ describe('a save the private directory cannot take', () => {
 
     const next = await start();
     expect(next.getOverseerSettings().watchIntervalMs, 'the setting was lost with the write').toBe(120000);
-    expect(fs.statSync(LEGACY).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(LEGACY).mode & 0o777).toBe(0o600);
   });
 
   it('is taken out of the agents\' directory by the next read, once the private one can be written', async () => {
@@ -336,7 +337,7 @@ describe('nothing to migrate', () => {
     expect(fs.existsSync(LEGACY), 'a fresh install still writes into the agents\' directory').toBe(false);
     // Every save, not only the one the migration makes: the mode a file is
     // created with is the mode it keeps.
-    expect(fs.statSync(PRIVATE).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(PRIVATE).mode & 0o777).toBe(0o600);
   });
 
   it('creates the private directory at 0700 on an install that had nothing to migrate', async () => {
@@ -348,13 +349,13 @@ describe('nothing to migrate', () => {
     fs.mkdirSync(probe);
     const ordinary = fs.statSync(probe).mode & 0o077;
     fs.rmdirSync(probe);
-    expect(ordinary, 'this umask would hide the defect').not.toBe(0);
+    if (hasPosixModes()) expect(ordinary, 'this umask would hide the defect').not.toBe(0);
 
     const overseer = await start();
     overseer.setOverseerSettings({ watchIntervalMs: 120000 });
 
     expect(fs.existsSync(LEGACY), 'there was something to migrate after all').toBe(false);
-    expect(fs.statSync(PRIVATE_DIR).mode & 0o777).toBe(0o700);
+    if (hasPosixModes()) expect(fs.statSync(PRIVATE_DIR).mode & 0o777).toBe(0o700);
   });
 
   it('does not migrate a second time in the same run, and reads the private file when both exist', async () => {

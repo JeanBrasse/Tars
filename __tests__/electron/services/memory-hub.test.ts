@@ -143,3 +143,22 @@ describe('needsPromptInjection', () => {
     expect(hub.needsPromptInjection(path.join(fakeHome, '.gemini'))).toBe(true);
   });
 });
+
+// The reviewer's gate of win/paths-memory-security: on macOS and Linux the old
+// `/`-only spelling of `..` is `..`, and projectMemoryDir took it when
+// ~/.claude/memory existed, so /api/memory/write wrote outside the projects folder.
+describe('writeProjectMemory for a path of dots', () => {
+  const HOST = process.platform;
+  afterEach(() => { Object.defineProperty(process, 'platform', { value: HOST, configurable: true }); });
+
+  for (const platform of ['darwin', 'linux'] as const) {
+    it(`${platform}: stays inside ~/.claude/projects`, () => {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+      const outside = path.join(fakeHome, '.claude', 'memory');
+      fs.mkdirSync(outside, { recursive: true });
+      const r = hub.writeProjectMemory('..', 'from a path of dots', 'dots.md');
+      expect(fs.existsSync(path.join(outside, 'dots.md'))).toBe(false);
+      expect(r.success && r.path?.startsWith(path.join(fakeHome, '.claude', 'projects') + path.sep)).toBe(true);
+    });
+  }
+});
