@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execFileSync } from 'child_process';
+import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import { DATA_DIR } from '../constants';
 import type {
@@ -232,14 +232,17 @@ export class GeminiProvider implements CLIProvider {
       // quotes and handed the whole line to execSync (/bin/sh -c), where
       // $(...) and backticks inside an argument are still expanded - and one of
       // those args is `tasmaniaServerPath` straight out of app-settings.json.
-      execFileSync('gemini', ['mcp', 'add', '-s', 'user', name, command, ...args], {
+      // execCliSync resolves the name first: on Windows gemini is an npm
+      // gemini.cmd, which a bare name never finds.
+      execCliSync('gemini', ['mcp', 'add', '-s', 'user', name, command, ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
       console.log(`[gemini] Registered MCP server ${name} via gemini mcp add`);
       return;
-    } catch {
-      // Fallback: write to settings.json manually
+    } catch (err) {
+      // Fallback: write to settings.json manually, and say why.
+      console.warn(`[gemini] gemini mcp add failed (${cliFailureText(err)}), writing settings.json instead`);
     }
 
     const settingsPath = path.join(this.configDir, 'settings.json');
@@ -273,12 +276,13 @@ export class GeminiProvider implements CLIProvider {
       // string here would expand $(...) and backticks inside the name. The add
       // path was fixed and its sibling a few lines below was not, which is the
       // whole shape of this bug class.
-      execFileSync('gemini', ['mcp', 'remove', '-s', 'user', name], {
+      execCliSync('gemini', ['mcp', 'remove', '-s', 'user', name], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
-    } catch {
-      // Ignore if doesn't exist
+    } catch (err) {
+      // Not registered is fine; a gemini that cannot be started is said.
+      if (err instanceof CliNotRunnableError) console.warn(`[gemini] gemini mcp remove not run: ${err.message}`);
     }
 
     // Also clean settings.json fallback

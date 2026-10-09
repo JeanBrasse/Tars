@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execFileSync } from 'child_process';
+import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import type {
   CLIProvider,
@@ -149,14 +149,17 @@ export class CodexProvider implements CLIProvider {
       // quotes and handed the whole line to execSync (/bin/sh -c), where
       // $(...) and backticks inside an argument are still expanded - and one of
       // those args is `tasmaniaServerPath` straight out of app-settings.json.
-      execFileSync('codex', ['mcp', 'add', name, '--', command, ...args], {
+      // execCliSync resolves the name first: on Windows codex is an npm
+      // codex.cmd, which a bare name never finds.
+      execCliSync('codex', ['mcp', 'add', name, '--', command, ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
       console.log(`[codex] Registered MCP server ${name} via codex mcp add`);
       return;
-    } catch {
-      // Fallback: write to config.toml manually
+    } catch (err) {
+      // Fallback: write to config.toml manually, and say why.
+      console.warn(`[codex] codex mcp add failed (${cliFailureText(err)}), writing config.toml instead`);
     }
 
     const configPath = path.join(this.configDir, 'config.toml');
@@ -174,9 +177,13 @@ export class CodexProvider implements CLIProvider {
     content = this.removeTomlSection(content, name);
 
     // Append new section
+    // TOML basic strings, escaped: a Windows path written raw (C:\Users...)
+    // holds `\U` and `\P`, which are no valid escape, and the whole file then
+    // fails to parse. Byte for byte the old output when there is no backslash,
+    // quote or control character to escape.
     const sectionKey = this.escapeTomlKey(name);
-    const argsToml = args.map(a => `"${a}"`).join(', ');
-    const section = `\n[mcp_servers.${sectionKey}]\ncommand = "${command}"\nargs = [${argsToml}]\n`;
+    const argsToml = args.map(a => this.tomlString(a)).join(', ');
+    const section = `\n[mcp_servers.${sectionKey}]\ncommand = ${this.tomlString(command)}\nargs = [${argsToml}]\n`;
 
     content = content.trimEnd() + '\n' + section;
     fs.writeFileSync(configPath, content);
@@ -190,12 +197,13 @@ export class CodexProvider implements CLIProvider {
       // string here would expand $(...) and backticks inside the name. The add
       // path was fixed and its sibling a few lines below was not, which is the
       // whole shape of this bug class.
-      execFileSync('codex', ['mcp', 'remove', name], {
+      execCliSync('codex', ['mcp', 'remove', name], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
-    } catch {
-      // Ignore if doesn't exist
+    } catch (err) {
+      // Not registered is fine; a codex that cannot be started is said.
+      if (err instanceof CliNotRunnableError) console.warn(`[codex] codex mcp remove not run: ${err.message}`);
     }
 
     // Also clean config.toml fallback
@@ -218,7 +226,8 @@ export class CodexProvider implements CLIProvider {
       const sectionKey = this.escapeTomlKey(name);
       const headerRegex = new RegExp(`\\[mcp_servers\\.${sectionKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`);
       if (!headerRegex.test(content)) return false;
-      return content.includes(expectedServerPath);
+      // The path as written: escaped, so a Windows path reads back doubled.
+      return content.includes(expectedServerPath) || content.includes(this.tomlString(expectedServerPath).slice(1, -1));
     } catch {
       return false;
     }
@@ -233,11 +242,20 @@ export class CodexProvider implements CLIProvider {
   }
 
   private escapeTomlKey(key: string): string {
-    // TOML keys with dots or special chars need quoting
+    // TOML keys with dots or special chars need quoting, and a quote or a
+    // backslash inside the key escaping, as grok-provider.ts does.
     if (/[^a-zA-Z0-9_-]/.test(key)) {
-      return `"${key}"`;
+      return this.tomlString(key);
     }
     return key;
+  }
+
+  /**
+   * A TOML basic string. JSON string escaping is valid TOML for backslashes,
+   * double quotes and control characters (grok-provider.ts, same helper).
+   */
+  private tomlString(value: string): string {
+    return JSON.stringify(value);
   }
 
   getMcpConfigStrategy(): 'flag' | 'config-file' {

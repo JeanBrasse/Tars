@@ -7,6 +7,8 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import type { AppSettings, CLIPaths } from '../types';
 import { dataPath } from '../constants';
+import { getPath, joinPathEntries, pathEntries, realFs, type Env, type FsProbe } from '../platform';
+import { findWindowsCli, windowsCliDirs, windowsCliFile, windowsGcloudDirs, type CliLookup } from '../providers/cli-exec';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -20,11 +22,16 @@ export interface CLIPathsHandlerDependencies {
   saveAppSettings: (settings: AppSettings) => void;
 }
 
+type DetectedPaths = { amp: string; claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string };
+
 /**
  * Detect CLI paths from the system.
  * If savedPaths is provided, manually-set paths are checked first and used if the binary exists.
  */
-async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ amp: string; claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string }> {
+async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<DetectedPaths> {
+  // Windows has no login shell to ask, no `which`, and no CLI without an
+  // extension: its own lookup, in Node, below. darwin/linux: as it always was.
+  if (process.platform === 'win32') return detectWindowsCLIPaths(savedPaths, process.env);
   const homeDir = os.homedir();
   const paths = { amp: '', claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '' };
 
@@ -389,17 +396,49 @@ async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ amp: st
   return paths;
 }
 
-/**
- * Save CLI paths to the shared config file that MCP can read
- */
-function saveCLIPathsConfig(paths: CLIPaths): void {
-  const configDir = path.dirname(CLI_PATHS_CONFIG_FILE);
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true });
-  }
+/** The file each key names on disk (Qwen Code installs as `qwen`), in the order the detection above reaches them. */
+const WINDOWS_CLI_NAMES: Array<[keyof DetectedPaths, string]> = [
+  ['claude', 'claude'], ['codex', 'codex'], ['gemini', 'gemini'], ['grok', 'grok'], ['opencode', 'opencode'],
+  ['amp', 'amp'], ['pi', 'pi'], ['gws', 'gws'], ['gcloud', 'gcloud'], ['gh', 'gh'], ['node', 'node'],
+  ['qwencode', 'qwen'], ['minimax', 'minimax'],
+];
 
-  // Build full PATH string from configured paths
-  const homeDir = os.homedir();
+/**
+ * detectCLIPaths on Windows (audit B/C-01..C-04). The PATH is the process's
+ * own (Windows has no login shell whose rc files add to it), read under
+ * whatever spelling it has. Each CLI is looked up in Node, PATHEXT and all:
+ * first where Windows installers put it, then along the PATH. A file must be
+ * one Tars can start (a .exe, or an npm .cmd it can read through), never the
+ * extensionless sh shim npm writes beside it; gcloud only has to be there
+ * (gcloud.cmd is the Cloud SDK's own batch file, which gws starts, not Tars).
+ * What was found and could not be used is logged.
+ */
+export function detectWindowsCLIPaths(savedPaths: Partial<CLIPaths> | undefined, env: Env, fs: FsProbe = realFs): DetectedPaths {
+  const paths: DetectedPaths = { amp: '', claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '' };
+  const lookupFor = (key: keyof DetectedPaths): CliLookup => (key === 'gcloud' ? 'present' : 'startable');
+  const installDirs = windowsCliDirs(env);
+
+  for (const [key, name] of WINDOWS_CLI_NAMES) {
+    const savedPath = savedPaths?.[key];
+    if (typeof savedPath === 'string' && savedPath && 'path' in windowsCliFile(savedPath, env, lookupFor(key), fs)) {
+      paths[key] = savedPath;
+      continue;
+    }
+    const dirs = key === 'gcloud' ? [...windowsGcloudDirs(env), ...installDirs] : installDirs;
+    const found = findWindowsCli(name, dirs, env, lookupFor(key), fs);
+    for (const r of found.rejected) console.warn(`[cli-paths] ${name}: ${r.path ?? r.name} not used (${r.reason}): ${r.detail}`);
+    if (found.path) paths[key] = found.path;
+  }
+  return paths;
+}
+
+/**
+ * The folders cli-paths.json's fullPath starts with, after the user's own:
+ * where CLIs are installed on this platform. On darwin/linux the list it has
+ * always been.
+ */
+function defaultCliDirs(homeDir: string): string[] {
+  if (process.platform === 'win32') return windowsCliDirs(process.env);
   const defaultPaths = [
     '/opt/homebrew/bin',
     '/usr/local/bin',
@@ -420,17 +459,39 @@ function saveCLIPathsConfig(paths: CLIPaths): void {
       // Ignore
     }
   }
+  return defaultPaths;
+}
 
-  // Combine all paths
+/**
+ * The process PATH as entries: `;`-separated on Windows, whose every drive
+ * holds a colon, under whatever spelling the variable has there. darwin/linux:
+ * split on `:` exactly as before, an unset PATH giving one empty entry.
+ */
+function processPathEntries(): string[] {
+  if (process.platform === 'win32') return pathEntries(getPath(process.env, 'win32'), 'win32');
+  return (process.env.PATH || '').split(':');
+}
+
+/**
+ * Save CLI paths to the shared config file that MCP can read
+ */
+function saveCLIPathsConfig(paths: CLIPaths): void {
+  const configDir = path.dirname(CLI_PATHS_CONFIG_FILE);
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
+  // Build full PATH string from configured paths, with this platform's
+  // separator: `C:\tools` joined with `:` read back as `C` and `\tools`.
   const allPaths = [...new Set([
     ...paths.additionalPaths,
-    ...defaultPaths,
-    ...(process.env.PATH || '').split(':'),
+    ...defaultCliDirs(os.homedir()),
+    ...processPathEntries(),
   ])];
 
   const config = {
     ...paths,
-    fullPath: allPaths.join(':'),
+    fullPath: joinPathEntries(allPaths, process.platform),
     updatedAt: new Date().toISOString(),
   };
 
@@ -530,27 +591,7 @@ export function getCLIPathsConfig(): CLIPaths & { fullPath: string } {
   }
 
   // Return defaults
-  const homeDir = os.homedir();
-  const defaultPaths = [
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    path.join(homeDir, '.local/bin'),
-    path.join(homeDir, 'Library/pnpm'),
-    path.join(homeDir, '.yarn/bin'),
-  ];
-
-  // Add nvm paths
-  const nvmDir = path.join(homeDir, '.nvm/versions/node');
-  if (fs.existsSync(nvmDir)) {
-    try {
-      const versions = fs.readdirSync(nvmDir);
-      for (const version of versions) {
-        defaultPaths.push(path.join(nvmDir, version, 'bin'));
-      }
-    } catch {
-      // Ignore
-    }
-  }
+  const defaultPaths = defaultCliDirs(os.homedir());
 
   return {
     amp: '',
@@ -567,7 +608,7 @@ export function getCLIPathsConfig(): CLIPaths & { fullPath: string } {
     node: '',
     minimax: '',
     additionalPaths: [],
-    fullPath: [...new Set([...defaultPaths, ...(process.env.PATH || '').split(':')])].join(':'),
+    fullPath: joinPathEntries([...new Set([...defaultPaths, ...processPathEntries()])], process.platform),
   };
 }
 

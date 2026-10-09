@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 import { privatePath } from '../../constants';
 import { writeSecretFileSync } from '../../utils/secret-file';
 import type { ClaudeAccount, ClaudeAccountsSettings } from '../../types';
+import { claudeAccountsAvailable } from '../../platform/claude-accounts';
 
 /**
  * Which Claude accounts Tars may launch agents on (DESIGN-COMPTES-CLAUDE.md, B1).
@@ -128,9 +129,11 @@ export function normalizeAccountsSettings(raw: unknown, root: string = accountsR
   };
 }
 
-export function readAccountsSettings(): ClaudeAccountsSettings {
+export function readAccountsSettings(platform: NodeJS.Platform = process.platform): ClaudeAccountsSettings {
   try {
-    return normalizeAccountsSettings(JSON.parse(fs.readFileSync(accountsFile(), 'utf-8')));
+    const settings = normalizeAccountsSettings(JSON.parse(fs.readFileSync(accountsFile(), 'utf-8')));
+    // Off on a Windows build until the accounts are ported (D17), accounts kept.
+    return claudeAccountsAvailable(platform) ? settings : { ...settings, enabled: false };
   } catch {
     return defaultAccountsSettings();
   }

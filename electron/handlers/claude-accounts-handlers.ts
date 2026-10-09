@@ -26,6 +26,7 @@ import { blockedUntil, deleteAuth, getAuth, hasAuth, setAuth, type AuthState } f
 import * as fs from 'fs';
 import type { AgentStatus, AppSettings, ClaudeAccount, ClaudeAccountState, ClaudeAccountsSettings, ClaudeAccountsView } from '../types';
 import { refuseWhileQuitting } from '../core/quit-state';
+import { killPty } from '../core/pty-kill';
 
 /**
  * The Settings contract for several Claude accounts (DESIGN-COMPTES-CLAUDE.md, B6).
@@ -354,7 +355,8 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
 
       for (const [ptyId, forId] of loginFor) {
         if (forId !== account.id) continue;
-        loginPtys.get(ptyId)?.kill();
+        const term = loginPtys.get(ptyId);
+        if (term) killPty(term);
         loginPtys.delete(ptyId);
         loginFor.delete(ptyId);
       }
@@ -449,7 +451,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
     const { ptyId } = (p ?? {}) as { ptyId?: unknown };
     const term = typeof ptyId === 'string' && loginFor.has(ptyId) ? loginPtys.get(ptyId) : undefined;
     if (!term) return { success: false, error: 'There is no such login terminal.' };
-    term.kill();
+    killPty(term);
     loginPtys.delete(ptyId as string);
     loginFor.delete(ptyId as string);
     return { success: true };

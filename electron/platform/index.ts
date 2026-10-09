@@ -12,6 +12,9 @@ export {
   resolveCliBinary, findOnPath, isPlainAbsolute, pathExts, DEFAULT_PATHEXT,
   type CliBinary, type CliBinaryFailure, type CliBinaryFailureReason,
 } from './cli-binary';
+export { windowsCliFile, findWindowsCli, windowsCliDirs, windowsGcloudDirs, type CliLookup } from './windows-cli';
+export { cliEnv, stdioServerCommand, nodeServerCommand } from './cli-env';
+export { childEnv } from './child-env';
 export { posixWords, PosixWordsError, type PosixWordsErrorCode } from './posix-words';
 export {
   buildWindowsCommandLine, quoteWindowsArg, quoteWindowsProgram, WindowsCommandLineError, WINDOWS_COMMAND_LINE_MAX,
@@ -24,6 +27,7 @@ export { isUnsafePathSegment } from './windows-names';
 export { projectName } from './project-name';
 export {
   encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, memoryProjectDirName, knownProjectsByFolder,
+  transcriptProjectDirName,
   type DecodeDeps,
 } from './claude-project-dir';
 export { credentialStoreDirs } from './credential-stores';

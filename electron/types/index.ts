@@ -408,6 +408,13 @@ export interface AppSettings {
    *  was the old behaviour and it spawned sessions on every visit home. */
   autoStartAgentsOnLaunch?: boolean;
   cliPaths: CLIPaths;
+  /**
+   * The shell a terminal runs on Windows (decision D3): a path (Git Bash is
+   * `C:\Program Files\Git\bin\bash.exe`; a bare `bash` finds WSL's first), or a
+   * name on the PATH such as `pwsh`. Unset: pwsh.exe, else Windows PowerShell,
+   * else cmd.exe. Read on Windows only; set from Settings > Terminal (D9).
+   */
+  terminalShell?: string;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
   ampEnabled?: boolean;

@@ -53,6 +53,17 @@ export function claudeProjectDirNames(projectPath: string, platform: NodeJS.Plat
 }
 
 /**
+ * The folder a session's transcript is looked for in (utils/resume-session.ts,
+ * which every reader of a transcript goes through). win32: Claude's own name,
+ * the only one Claude writes there (the old rule kept a Windows path's `:`
+ * and `\`, `C:\Users\x` stayed `C:\Users\x`). darwin/linux: `/` and `.` to
+ * `-`, the rule Tars has always read transcripts under there, unchanged.
+ */
+export function transcriptProjectDirName(projectPath: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? encodeClaudeProjectDir(projectPath) : projectPath.replace(/[/.]/g, '-');
+}
+
+/**
  * The folder Memory gives a Tars project Claude has no folder for yet, where
  * it creates the project's MEMORY.md (memory-service). win32: Claude's own
  * name, the one Claude reads (the old rule kept a Windows path's `:` and `\`).

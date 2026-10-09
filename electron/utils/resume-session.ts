@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { transcriptProjectDirName } from '../platform/claude-project-dir';
 
 /**
  * Whether an agent's last session can actually be resumed.
@@ -15,14 +16,16 @@ import * as path from 'path';
  *
  * The project directory name is Claude Code's own encoding: every `/` and `.`
  * in the path becomes `-` (see decode-project-path.ts, which reverses it).
+ * On Windows, every character that is not a letter or a digit, as Claude
+ * names the folder there (platform/claude-project-dir.ts).
  * Encoding is lossy, so several paths can encode to the same directory name;
  * that is fine here, because the session id is a UUID and the check is only
  * asking whether this exact transcript exists.
  */
 
 /** Claude Code's project directory name for a filesystem path. */
-export function encodeProjectDirName(projectPath: string): string {
-  return projectPath.replace(/[/.]/g, '-');
+export function encodeProjectDirName(projectPath: string, platform: NodeJS.Platform = process.platform): string {
+  return transcriptProjectDirName(projectPath, platform);
 }
 
 export function transcriptPath(projectPath: string, sessionId: string, homeDir = os.homedir()): string {

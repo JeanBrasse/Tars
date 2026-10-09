@@ -17,9 +17,10 @@ import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
 import { writeProgrammaticInput, type MessageSender } from '../core/pty-manager';
-import { cliRunningIn, shellReady } from '../core/agent-pty';
+import { cliRunningIn, shellReady, agentPtyEnv } from '../core/agent-pty';
 import { stopAcpRuns } from './acp/delegate';
-import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
+import { killStalePty, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
+import { toLaunch, projectName, type Launch } from '../platform';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteWaker } from '../core/agent-asleep';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
@@ -96,7 +97,7 @@ export function projectsReport(
   const b = words.strong ?? '*';
   let text = words.title;
   byProject.forEach((projectAgents, projectPath) => {
-    text += `${words.folder} ${b}${projectPath.split('/').pop() || 'Unknown'}${b}\n`;
+    text += `${words.folder} ${b}${projectName(projectPath) || 'Unknown'}${b}\n`;
     text += `${words.indent}\`${projectPath}\`\n`;
     text += `${words.indent}${words.people} Agents: ${projectAgents.map(a => `${words.face(a)}${a.name}${statusDot(a, words.dot)}`).join(', ')}\n\n`;
   });
@@ -231,28 +232,60 @@ async function claimLaunch(agent: AgentStatus): Promise<object | null> {
  * typed before the prompt, a long launch is cut (shellReady).
  */
 async function typeLaunch(
-  fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, workingPath: string, command: string, task: string,
+  fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, launch: Launch, task: string, before: StatusBefore,
   from: BotChannel, handedOver: string,
 ): Promise<void> {
-  await shellReady(ptyProcess);
+  // darwin/linux: typed once the shell is at its prompt. win32 types
+  // nothing, the CLI replaces the shell (decision D2): no prompt to wait for.
+  if (launch.platform !== 'win32') await shellReady(ptyProcess);
   // Work handed over, for the task its first turn opens (task-ledger.ts).
   noteHandOff(agent.id, { ...handOffFrom({ kind: 'channel', channel: from }), text: handedOver });
-  writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
-  noteLaunch(ptyProcess, launchSettings(agent));
+  let cli: pty.IPty;
+  try {
+    cli = await launchIntoTerminal(agent, ptyProcess, launch, fleet);
+  } catch (err) {
+    // win32 only, where the CLI's terminal is opened here: it never ran, so
+    // the agent is what it was before markRunning, and the bot says why. A
+    // line typed into a shell, on darwin and linux, is left as it always was.
+    if (launch.platform === 'win32') {
+      Object.assign(agent, before);
+      fleet.saveAgents();
+    }
+    throw err;
+  }
+  noteLaunch(cli, launchSettings(agent));
   fleet.saveAgents();
   // Started from a chat, and just as able to come up with no task.
   armTaskStartWatch(agent, agent.ptyId, task);
 }
 
-/** Where the launch runs, quoted for the shell. Read where each flow always read it. */
-function workingPathOf(agent: AgentStatus): string {
-  return (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
+/**
+ * How the command starts in the agent's terminal (platform/launch.ts): typed
+ * into its shell on darwin and linux, as the terminal's process on win32.
+ * Worked out before the agent is marked running, so a CLI that cannot be
+ * started there, or a shell it may not replace, leaves it as it was.
+ */
+function launchIn(agent: AgentStatus, ptyProcess: pty.IPty, workingDir: string, command: string): Launch {
+  const launch = toLaunch(command, workingDir, agentPtyEnv(ptyProcess) ?? process.env);
+  const refused = cliStartRefusal(agent, launch);
+  if (refused) throw new Error(refused);
+  return launch;
 }
 
-function markRunning(agent: AgentStatus, task: string): void {
+/** Where the launch runs. Read where each flow always read it. */
+function workingDirOf(agent: AgentStatus): string {
+  return agent.worktreePath || agent.projectPath;
+}
+
+/** What markRunning changes, as it was: put back when the CLI never started. */
+type StatusBefore = Pick<AgentStatus, 'status' | 'currentTask' | 'lastActivity'>;
+
+function markRunning(agent: AgentStatus, task: string): StatusBefore {
+  const before = { status: agent.status, currentTask: agent.currentTask, lastActivity: agent.lastActivity };
   agent.status = 'running';
   agent.currentTask = task.slice(0, 100);
   agent.lastActivity = new Date().toISOString();
+  return before;
 }
 
 export type StartOutcome = 'no-terminal' | 'refused' | 'held' | 'written' | 'started';
@@ -282,7 +315,7 @@ export async function startWithTask(
   const asleep = agent.status === 'asleep';
   if (asleep) noteWaker(agent.id, from, 'chat');
   try {
-    const workingPath = workingPathOf(agent);
+    const workingDir = workingDirOf(agent);
     launch = await claimLaunch(agent);
     const ptyProcess = await terminalOf(fleet, agent);
     if (!ptyProcess) {
@@ -332,8 +365,9 @@ export async function startWithTask(
       isSuperAgent: isSuperAgent(agent),
       orchestratorMode: isSuperAgent(agent),
     });
-    markRunning(agent, task);
-    await typeLaunch(fleet, agent, ptyProcess, workingPath, command, task, from, task);
+    const start = launchIn(agent, ptyProcess, workingDir, command);
+    const before = markRunning(agent, task);
+    await typeLaunch(fleet, agent, ptyProcess, start, task, before, from, task);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(agent.id, launch);
@@ -420,7 +454,7 @@ export async function forwardToOrchestrator(
       await opts.reply('typed', heldBy ? { heldBy } : undefined);
       return;
     }
-    const workingPath = workingPathOf(orchestrator);
+    const workingDir = workingDirOf(orchestrator);
     const provider = getProvider(orchestrator.provider || 'claude');
     const binaryPath = provider.resolveBinaryPath(fleet.settings());
     const mcpConfigPath = mcpConfigPathFor(provider);
@@ -442,8 +476,9 @@ export async function forwardToOrchestrator(
       isSuperAgent: true,
       orchestratorMode: true,
     });
-    markRunning(orchestrator, opts.message);
-    await typeLaunch(fleet, orchestrator, ptyProcess, workingPath, command, prompt, from, opts.message);
+    const start = launchIn(orchestrator, ptyProcess, workingDir, command);
+    const before = markRunning(orchestrator, opts.message);
+    await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt, before, from, opts.message);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(orchestrator.id, launch);

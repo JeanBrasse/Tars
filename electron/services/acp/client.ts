@@ -2,6 +2,7 @@ import { execFile, execFileSync, spawn, type ChildProcessWithoutNullStreams } fr
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import { refuseWhileQuitting } from '../../core/quit-state';
+import { getPath, killTree, realFs, resolveCliBinary, withPath, type FsProbe } from '../../platform';
 
 /**
  * An Agent Client Protocol session against one agent process.
@@ -107,6 +108,35 @@ function launchFailure(err: NodeJS.ErrnoException, command: string, cwd: string,
     return new Error(`could not start the agent: ${command} was not found. Tars looked in ${searched || 'an empty PATH'}. ${install}, or set where it lives in Settings > CLI Paths.`);
   }
   return new Error(`could not start the agent: ${command}: ${err.message}`);
+}
+
+/**
+ * What start() spawns for a launch the registry named, in the environment the
+ * agent gets: the command and its arguments as given on darwin and linux, and
+ * on win32 the file the platform layer resolves the name to (audit A20). There
+ * `npx` is npx.cmd, which spawn cannot start without a shell and libuv does
+ * not even find, so the shim is read through to the node.exe and script it
+ * would run, the registry's arguments after them. The child gets its PATH
+ * under one name, the value Tars set (path-env.ts withPath). A command that
+ * cannot be resolved fails as a launch that could not find it does.
+ */
+export function resolveAgentLaunch(
+  launch: { command: string; args: string[] },
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  platform: NodeJS.Platform = process.platform,
+  disk: FsProbe = realFs,
+): { file: string; args: string[]; env: NodeJS.ProcessEnv } {
+  const searched = getPath(env, platform);
+  const childEnv = searched === undefined ? env : withPath(env, searched, platform);
+  const binary = resolveCliBinary(launch.command, childEnv, platform, disk);
+  if (!binary.ok) {
+    const cause = binary.reason === 'not-found'
+      ? Object.assign(new Error(binary.detail), { code: 'ENOENT' })
+      : new Error(binary.detail);
+    throw launchFailure(cause, launch.command, cwd, searched);
+  }
+  return { file: binary.file, args: [...binary.prefixArgs, ...launch.args], env: childEnv as NodeJS.ProcessEnv };
 }
 
 /**
@@ -249,6 +279,53 @@ async function endProcessTree(root: number): Promise<void> {
   last.unref();
 }
 
+/**
+ * win32's stop: the process Tars spawned and everything under it, by
+ * `taskkill /T /F` (platform/kill-tree.ts, audit A21). Windows has neither
+ * process groups nor ps, and `child.kill()` ends the root alone: npx's node,
+ * the adapter, the CLI and the commands it ran lived on. A child that has
+ * already exited is left: the tree taskkill walks starts at it, and Windows
+ * may have given its id to another process once Node let go of it. Should
+ * taskkill fail, the root is ended through its own handle, and it is said.
+ */
+function endProcessTreeOnWindows(child: ChildProcessWithoutNullStreams, pid: number): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  killTree(pid).catch(err => {
+    console.error(`[acp] could not end the processes under ${pid}, ending ${pid} alone:`, err);
+    child.kill();
+  });
+}
+
+/**
+ * win32's quit: the same taskkill, run while the quit waits, under the quit's
+ * deadline. killTree's runner is made synchronous, so each tree is ended when
+ * this returns. A root whose taskkill fails or runs out of time is ended by
+ * its id, which is still its own: Node holds its handle until the exit is
+ * read, and the event loop reads nothing while the quit holds it.
+ */
+function endProcessTreesOnWindowsNow(roots: number[], deadline: number): void {
+  for (const root of roots) {
+    let failed = false;
+    killTree(root, 'win32', {
+      execFile: (file, args) => {
+        try {
+          const left = deadline - Date.now();
+          if (left <= 20) throw new Error('no time was left before the quit');
+          execFileSync(file, args, { timeout: left, windowsHide: true, stdio: 'ignore' });
+          return Promise.resolve();
+        } catch (err) {
+          failed = true;
+          const status = (err as { status?: unknown }).status;
+          return Promise.reject(Object.assign(err as Error, typeof status === 'number' ? { code: status } : {}));
+        }
+      },
+    }).catch(err => console.error(`[acp] quit: could not end the processes under ${root}:`, err));
+    if (failed) {
+      try { process.kill(root); } catch { /* it is gone */ }
+    }
+  }
+}
+
 /** How long the quit waits for delegated runs to end on SIGTERM before SIGKILL. */
 const QUIT_GRACE_MS = 1_000;
 /** And for the read of ps before the SIGKILL, past that. */
@@ -270,6 +347,7 @@ export function endProcessTreesNow(roots: number[]): void {
   if (roots.length === 0) return;
   const graceEnds = Date.now() + QUIT_GRACE_MS;
   const deadline = graceEnds + QUIT_LAST_READ_MS;
+  if (process.platform === 'win32') return endProcessTreesOnWindowsNow(roots, deadline);
   const read = (until: number) => {
     const left = Math.min(until, deadline) - Date.now();
     return left > 20 ? processTableNow(left) : undefined;
@@ -317,18 +395,28 @@ export class AcpSession extends EventEmitter {
   /** Spawns the agent, negotiates the protocol and opens a session. */
   async start(): Promise<{ sessionId: string; agentName?: string; capabilities?: unknown }> {
     refuseWhileQuitting('delegated run');
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    for (const name of this.options.unsetEnv ?? []) delete env[name];
-    Object.assign(env, this.options.env);
-    const child = spawn(this.launch.command, this.launch.args, {
+    const given: NodeJS.ProcessEnv = { ...process.env };
+    for (const name of this.options.unsetEnv ?? []) delete given[name];
+    Object.assign(given, this.options.env);
+    let target: ReturnType<typeof resolveAgentLaunch>;
+    try {
+      target = resolveAgentLaunch(this.launch, given, this.options.cwd);
+    } catch (err) {
+      this.closed = true;
+      throw err;
+    }
+    const env = target.env;
+    const child = spawn(target.file, target.args, {
       cwd: this.options.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
       // Its own process group, so that stop() ends what it started too: the
       // command Tars spawns is npx or an adapter, the CLI runs under it, and
       // the commands the CLI runs under that (the Audit's table, #6). Windows
-      // has no groups to signal; the kill there is the process alone.
+      // has no groups to signal: stop() ends the tree there by taskkill.
       detached: process.platform !== 'win32',
+      // No console window for the agent: the main process has none to share.
+      windowsHide: true,
     });
     this.child = child;
 
@@ -348,13 +436,16 @@ export class AcpSession extends EventEmitter {
     // hears is thrown: in the main process, the "Uncaught Exception" window
     // Noah saw on 2026-09-18, while the initialize below waited out its 90
     // seconds. It fails what is waiting instead, that initialize first.
-    child.on('error', err => this.fail(launchFailure(err, this.launch.command, this.options.cwd, env.PATH)));
+    child.on('error', err => this.fail(launchFailure(err, this.launch.command, this.options.cwd, getPath(env, process.platform))));
     // The same class on the way in: writing to an agent that has stopped
     // reading raises EPIPE on its stdin. Nothing can reach it any more, so the
     // session is over, and the agent is stopped rather than left behind.
     child.stdin.on('error', (err: NodeJS.ErrnoException) => {
       this.fail(new Error(`the agent stopped reading its input (${err.code ?? err.message})`));
-      child.kill();
+      // On win32 the tree, as stop() ends it: once the root is gone, taskkill
+      // can no longer find what runs under it.
+      if (process.platform === 'win32' && child.pid) endProcessTreeOnWindows(child, child.pid);
+      else child.kill();
     });
 
     const init = await this.request('initialize', {
@@ -499,27 +590,31 @@ export class AcpSession extends EventEmitter {
     this.child = null;
     if (!child) return;
     const pid = child.pid;
-    if (!pid || process.platform === 'win32') {
+    if (!pid) {
       child.kill();
       return;
     }
+    if (process.platform === 'win32') return endProcessTreeOnWindows(child, pid);
     void endProcessTree(pid);
   }
 
   /**
    * For the quit: marks the run ended and hands back the process id to end
    * with endProcessTreesNow, all runs at once. Undefined when there is nothing
-   * to end, or on Windows, where the process is killed here, having no group.
+   * to end.
    */
   releaseForQuit(): number | undefined {
     this.closed = true;
     const child = this.child;
     this.child = null;
     if (!child) return undefined;
-    if (!child.pid || process.platform === 'win32') {
+    if (!child.pid) {
       child.kill();
       return undefined;
     }
+    // An exited root's id may be another process's by now, and taskkill /T
+    // would end that one's tree (see endProcessTreeOnWindows).
+    if (process.platform === 'win32' && (child.exitCode !== null || child.signalCode !== null)) return undefined;
     return child.pid;
   }
 
