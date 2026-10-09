@@ -32,9 +32,11 @@
  *      app runs from disk is unpacked (node-pty with ConPTY, better-sqlite3,
  *      the Node hooks, every MCP bundle), and nothing it never loads is
  *      shipped (next, @next/swc, sharp, other platforms' prebuilds);
- *   4. gh release upload v<version>: the installer, its blockmap and the zip,
- *      then latest.yml, so that no installed Tars reads a latest.yml whose
- *      installer is not there yet; never over a file already there;
+ *   4. GitHub asked again what step 1 asked of it, since the build takes
+ *      minutes; then gh release upload v<version>: the installer, its
+ *      blockmap and the zip, then latest.yml, so that no installed Tars reads
+ *      a latest.yml whose installer is not there yet; never over a file
+ *      already there;
  *   5. what GitHub serves is read back: the tag still on the commit built, the
  *      digest of every Windows asset, latest.yml byte for byte, and v<version>
  *      still the latest release.
@@ -127,8 +129,12 @@ function mcpDirs(pkg) {
   return (pkg.build?.extraResources ?? []).map(e => e.from).filter(from => /^mcp-/.test(from));
 }
 
-/** What `npm run electron:build` does for macOS, for Windows: each step a command and its argv, never a shell string. */
-export function buildSteps(root) {
+/**
+ * What `npm run electron:build` does for macOS, for Windows: each step a
+ * command and its argv, never a shell string. An npm that cannot be found to
+ * run without a shell is a refusal that says where it was looked for.
+ */
+export function buildSteps(root, { npmCommand: findNpm = npmCommand } = {}) {
   const pkg = readPackage(root);
   const resolve = id => {
     try {
@@ -137,7 +143,13 @@ export function buildSteps(root) {
       return join(root, 'node_modules', ...id.split('/'));
     }
   };
-  const npm = (args, cwd, label) => ({ label, cwd, ...npmCommand('npm', args) });
+  const npm = (args, cwd, label) => {
+    try {
+      return { label, cwd, ...findNpm('npm', args) };
+    } catch (err) {
+      throw new Refusal(err.message);
+    }
+  };
   return [
     { label: 'app icon: node scripts/make-app-ico.mjs', cwd: root, command: process.execPath, args: [join(root, 'scripts', 'make-app-ico.mjs')] },
     npm(['run', 'build:renderer'], root, 'npm run build:renderer'),
@@ -414,7 +426,7 @@ async function readBack({ repo, version, head, files, yml }) {
   if (latest.tag_name !== tag) throw new Refusal(`/releases/latest is ${latest.tag_name}, not ${tag}`);
 }
 
-export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), log = console.log, build = runSteps } = {}) {
+export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), log = console.log, build = runSteps, npmCommand: findNpm = npmCommand } = {}) {
   try {
     const { dryRun } = parseArgs(argv);
     const toplevel = await run('git', ['rev-parse', '--show-toplevel'], { cwd });
@@ -439,12 +451,13 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     const releaseDir = join(root, 'release');
     if (dryRun) {
       log('2. would build for Windows, without CI, GH_TOKEN or GITHUB_TOKEN:');
-      for (const step of buildSteps(root)) log(`   ${step.label}`);
+      for (const step of buildSteps(root, { npmCommand: findNpm })) log(`   ${step.label}`);
     } else {
       log('2. build for Windows, without CI, GH_TOKEN or GITHUB_TOKEN:');
+      const steps = buildSteps(root, { npmCommand: findNpm });
       mkdirSync(join(root, 'build'), { recursive: true });
       writeFileSync(join(root, WINDOWS_CONFIG_FILE), `${JSON.stringify(windowsBuilderConfig(pkg), null, 2)}\n`);
-      await build(buildSteps(root), { root, env: buildEnv(process.env), log });
+      await build(steps, { root, env: buildEnv(process.env), log });
     }
 
     let artifacts;
@@ -467,6 +480,10 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       return 0;
     }
 
+    // The build took minutes: GitHub is asked again, so that nothing goes up
+    // to a release that has since stopped being the latest, moved its tag or
+    // been given Windows files.
+    await checkRelease({ repo, version, head, names });
     for (const args of [first, last]) {
       const uploaded = await run('gh', args);
       if (uploaded.code !== 0) throw new Refusal(`gh ${args.slice(0, 3).join(' ')} failed: ${firstLine(uploaded.stderr)}`);
