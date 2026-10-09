@@ -41,6 +41,7 @@ import * as fs from 'fs';
 import { writeAtomicSync } from '../utils/secret-file';
 import { envelopeValue } from '../utils/envelope-value';
 import type { MessageSender } from '../core/pty-manager';
+import { samePath, isUnder } from '../platform/path-compare';
 
 export const PARKED = 'scheduled';
 /** The lane a parked task sits on: Tars's, taken by no agent yet. */
@@ -318,9 +319,7 @@ export async function getTask(h: Conn, caller: KanbanCaller, idOrPrefix: string)
 /** The project a task is filed under: the caller's own, which a worktree of it also names. */
 function projectFor(caller: KanbanCaller, asked?: string): KanbanResult<string> {
   if (!asked) return { ok: true, value: caller.projectPath };
-  const own = caller.projectPath.replace(/\/+$/, '');
-  const want = asked.replace(/\/+$/, '');
-  if (want === own || want.startsWith(`${own}/`)) return { ok: true, value: caller.projectPath };
+  if (samePath(asked, caller.projectPath) || isUnder(asked, caller.projectPath)) return { ok: true, value: caller.projectPath };
   return fail(403, `An agent files tasks in its own project (${caller.projectPath}), not in ${asked}.`);
 }
 

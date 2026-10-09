@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import { decodeWindowsClaudeProjectDir } from '../platform/claude-project-dir';
 
 /**
  * Decode a Claude Code project directory name back to a filesystem path.
@@ -12,8 +13,15 @@ import * as fs from 'fs';
  * longest possible segment first. For each candidate segment we try all
  * combinations of `-`, `.`, and `_` as separators so that `frontend-lite`,
  * `docs.octav.fi`, and `charlie_rabiller` are all correctly reconstructed.
+ *
+ * A Windows folder (`C--Users-...`, on Windows) is decoded by the platform
+ * layer, which rebuilds the drive and whatever character Claude turned into
+ * `-`. Everything else is a POSIX path, joined with POSIX separators on any
+ * host.
  */
 export function decodeProjectPath(dirName: string): string {
+  const windows = decodeWindowsClaudeProjectDir(dirName);
+  if (windows !== null) return windows;
   const tokens = dirName.replace(/^-/, '').split('-');
   let resolved = '/';
   let i = 0;
@@ -26,7 +34,7 @@ export function decodeProjectPath(dirName: string): string {
 
       if (len === 1) {
         // Single token: no separator ambiguity
-        const candidate = path.join(resolved, subTokens[0]);
+        const candidate = path.posix.join(resolved, subTokens[0]);
         try {
           if (fs.existsSync(candidate)) {
             resolved = candidate;
@@ -39,7 +47,7 @@ export function decodeProjectPath(dirName: string): string {
         // Try all separator combinations (-, ., _) for this group of tokens
         const names = separatorCombinations(subTokens);
         for (const name of names) {
-          const candidate = path.join(resolved, name);
+          const candidate = path.posix.join(resolved, name);
           try {
             if (fs.existsSync(candidate)) {
               resolved = candidate;
@@ -55,7 +63,7 @@ export function decodeProjectPath(dirName: string): string {
 
     if (!matched) {
       // Nothing found on disk: append the single token as-is
-      resolved = path.join(resolved, tokens[i]);
+      resolved = path.posix.join(resolved, tokens[i]);
       i++;
     }
   }
