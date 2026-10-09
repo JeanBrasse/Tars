@@ -35,7 +35,9 @@ import {
   setupProtocolHandler,
   getMainWindow,
   isDevBuild,
+  revealMainWindow,
 } from './core/window-manager';
+import { claimSingleInstance, installDesktopShell } from './core/desktop-lifecycle';
 
 import {
   agents,
@@ -99,7 +101,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, wireDialogProbe } from './core/agent-manager';
+import { startAgentAutosave, stopAgentAutosave, wireDialogProbe, stopStatusNotifications } from './core/agent-manager';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -433,6 +435,12 @@ function moveLocalKanbanToHermes() {
 
 // ============== App Initialization ==============
 
+// Windows: one Tars per profile. A second launch shows the first one's window
+// and ends here: it has read app-settings.json and nothing else, and it writes
+// nothing and starts nothing. Always true elsewhere.
+const isPrimaryInstance = claimSingleInstance(revealMainWindow);
+if (!isPrimaryInstance) app.exit(0);
+
 // Register protocol schemes before app is ready
 registerProtocolSchemes();
 
@@ -440,6 +448,7 @@ registerProtocolSchemes();
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return;
   console.log('App ready, initializing...');
 
   // Ensure data directory exists
@@ -504,6 +513,17 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
+  installDesktopShell({
+    getMainWindow,
+    explanation: {
+      explained: () => appSettings.closeToTrayExplained === true,
+      markExplained: () => {
+        appSettings = { ...appSettings, closeToTrayExplained: true };
+        saveAppSettingsToFile(appSettings);
+      },
+    },
+  });
 
   // Set the main window reference in utils
   setUtilsMainWindow(getMainWindow());
@@ -748,6 +768,10 @@ app.on('before-quit', (event) => {
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
       ['stopStallWatch', stopStallWatch],
+      // Windows: before the terminals' exits come in, which the quit waits
+      // for there, up to 5 s more (pty-kill.ts): no announcement goes out
+      // meanwhile, a pending one included. Nothing on darwin and linux.
+      ['stopStatusNotifications', () => stopStatusNotifications()],
       ['stopErrorTriage', stopErrorTriage],
       ['stopSleepWatch', stopSleepWatch],
       ['stopTmpRetention', () => stopTmpRetention()],

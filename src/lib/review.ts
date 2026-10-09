@@ -1,4 +1,5 @@
 import type { AgentStatus } from '@/types/electron';
+import { pathName } from '@/lib/display-path';
 
 /**
  * What the Review page lists, and how it says a patch is cut, worked out apart
@@ -21,7 +22,8 @@ export interface Workspace {
 /** The lines a patch view draws; past them it says where it stops. */
 export const PATCH_LINES = 4000;
 
-const lastPart = (p: string) => p.split('/').filter(Boolean).pop() || p;
+// pathName reads a Windows path too (C:\Users\me\app is app), and a POSIX one as before.
+const lastPart = (p: string) => pathName(p) || p;
 
 /**
  * One entry per working tree: agents sharing a worktree share their changes.

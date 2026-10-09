@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { AgentStatus } from '../types';
 import { TG_CHARACTER_FACES, SLACK_CHARACTER_FACES, DATA_DIR, OLD_DATA_DIR } from '../constants';
+import { windowsSoundCommand } from '../platform/sound';
 import { projectName } from '../platform/project-name';
 
 let mainWindow: BrowserWindow | null = null;
@@ -199,8 +200,14 @@ function playSound(filePath: string): void {
       if (err) console.error('Failed to play notification sound:', err.message);
     });
   } else if (process.platform === 'win32') {
-    // PowerShell one-liner to play audio on Windows
-    execFile('powershell', ['-c', `(New-Object Media.SoundPlayer '${filePath}').PlaySync()`], (err) => {
+    // A fixed PowerShell script, the path handed to it as data: the path comes
+    // from app-settings.json, which every agent can write (platform/sound.ts).
+    const sound = windowsSoundCommand(filePath);
+    if (!sound.ok) {
+      console.error('Refused to play notification sound:', sound.error);
+      return;
+    }
+    execFile(sound.file, sound.args, { env: sound.env, windowsHide: true }, (err) => {
       if (err) console.error('Failed to play notification sound:', err.message);
     });
   } else {

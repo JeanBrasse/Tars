@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import { isElectron } from '@/hooks/useElectron';
 import { DndContext } from '@dnd-kit/core';
 import { useElectronAgents, useElectronFS, useElectronSkills } from '@/hooks/useElectron';
@@ -109,7 +110,7 @@ export default function TerminalsView() {
       byPath.get(a.projectPath)!.push(a.id);
     }
     return Array.from(byPath.entries()).map(([path, agentIds]) => ({
-      name: path.split('/').pop() || path,
+      name: lastPathPart(path) || path,
       path,
       agentIds,
     }));

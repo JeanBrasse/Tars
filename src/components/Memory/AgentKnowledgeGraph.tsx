@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useCallback, useLayoutEffect } from 'react';
+import { isAbsolutePath, pathName, rendererPlatform, tildePath, toSlashes } from '@/lib/display-path';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
 import { BrandSpinner, Button, Panel, StatusSquare } from '@/components/ui';
@@ -183,7 +184,7 @@ type InstructionFiles = Record<string, string[] | 'global'>;
 
 // ── Build graph ───────────────────────────────────────────────────────────────
 
-const normalPath = (p: string) => p?.replace(/\/$/, '').toLowerCase();
+const normalPath = (p: string) => (p ? toSlashes(p).replace(/\/$/, '').toLowerCase() : p);
 
 /** The memory folder that belongs to a project path, matched loosely by tail. */
 function findMemory(memories: ProjectMemory[], projectPath: string) {
@@ -230,7 +231,7 @@ function buildGraph(
     const fileCount = memory?.hasMemory ? memory.files?.length ?? 0 : 0;
     addNode({
       id: `project:${projectPath}`,
-      label: memory?.projectName || projectPath.split('/').filter(Boolean).pop() || projectPath,
+      label: memory?.projectName || pathName(projectPath) || projectPath,
       kind: 'project',
       sub: `${fileCount} memory file${fileCount === 1 ? '' : 's'}`,
     });
@@ -281,8 +282,7 @@ function buildGraph(
 
   // ── Instruction files (CLAUDE.md) ──
   // Show a clean ~/-prefixed path as label
-  const toShortPath = (fp: string) =>
-    fp.replace(/^\/(?:Users|home)\/[^/]+\//, '~/').replace(/^\/Users\/[^/]+\//, '~/');
+  const toShortPath = (fp: string) => tildePath(fp);
 
   for (const [filePath, scope] of Object.entries(instructions)) {
     const label = toShortPath(filePath);
@@ -438,17 +438,19 @@ export default function AgentKnowledgeGraph() {
         ?? '';
        
       const cleanOutput = rawOutput.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '');
-      const foundPaths = cleanOutput.split('\n').map(l => l.trim()).filter(l => l.startsWith('/'));
+      const foundPaths = cleanOutput.split('\n').map(l => l.trim()).filter(l => isAbsolutePath(l, rendererPlatform()));
       for (const fp of foundPaths) {
+        // A Windows path is read with / as its separator, as a posix one is.
+        const slashed = toSlashes(fp);
         // Global: ~/.claude/ or ~/.dorothy/ files
-        const isGlobal = (fp.includes('/.claude/') && !fp.includes('/.claude/projects/'))
-          || fp.includes('/.dorothy/');
+        const isGlobal = (slashed.includes('/.claude/') && !slashed.includes('/.claude/projects/'))
+          || slashed.includes('/.dorothy/');
         if (isGlobal) {
           instrFiles[fp] = 'global';
         } else {
           // Project-specific: match to agents whose projectPath contains this file
           const matchingIds = typedAgentsCast
-            .filter(a => a.projectPath && fp.startsWith(a.projectPath + '/'))
+            .filter(a => a.projectPath && slashed.startsWith(toSlashes(a.projectPath) + '/'))
             .map(a => a.id);
           instrFiles[fp] = matchingIds.length > 0 ? matchingIds : 'global';
         }
@@ -462,7 +464,7 @@ export default function AgentKnowledgeGraph() {
       }).catch(() => null);
       const projectMcpResults = await Promise.all(
         uniqueProjectPaths.map(async p => {
-          const found = Object.entries(mcpFiles?.files ?? {}).find(([k]) => k.startsWith(p + '/'));
+          const found = Object.entries(mcpFiles?.files ?? {}).find(([k]) => toSlashes(k).startsWith(toSlashes(p) + '/'));
           const output = (found?.[1] ?? '').replace(/\r/g, '').trim();
 
           if (!output) return null;

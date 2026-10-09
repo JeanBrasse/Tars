@@ -5,6 +5,8 @@ import * as os from 'os';
 import { getAppBasePath } from '../utils';
 import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
 import { landsUnderSafeRoot } from '../utils/real-target';
+import { titleBarOptions } from '../platform/desktop-shell';
+import { installEditContextMenu } from './edit-context-menu';
 
 // Global reference to the main window
 let mainWindow: BrowserWindow | null = null;
@@ -72,6 +74,18 @@ export function getMainWindow(): BrowserWindow | null {
 }
 
 /**
+ * Bring the main window back, wherever it went: hidden to the tray (Windows
+ * closes to it), minimised, or behind another app. The tray menu's Show Tars
+ * and a second launch (single instance) both land here.
+ */
+export function revealMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+/**
  * Set the main window instance
  */
 export function setMainWindow(window: BrowserWindow | null) {
@@ -101,7 +115,9 @@ export function createWindow() {
     minWidth: 1200,
     minHeight: 800,
     title: 'Tars',
-    titleBarStyle: 'hiddenInset',
+    // hiddenInset on macOS and Linux. Windows: no frame, the
+    // native caption buttons drawn over the window in the theme's background.
+    ...titleBarOptions(process.platform),
     backgroundColor: '#121212',
     // A test run stays out of the way: shown without ever being activated, so
     // the window the author is actually typing in keeps the keyboard. Note the
@@ -225,6 +241,9 @@ export function hardenWindow(window: BrowserWindow): void {
   });
 
   window.webContents.on('will-attach-webview', event => event.preventDefault());
+
+  // Windows: cut, copy, paste and select all on a right click in text (edit-context-menu.ts).
+  installEditContextMenu(window.webContents);
 }
 
 /**

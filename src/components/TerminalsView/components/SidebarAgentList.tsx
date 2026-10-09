@@ -1,6 +1,7 @@
 'use client';
 
 import { Play, Square } from 'lucide-react';
+import { lastPathPart } from '@/lib/display-path';
 import type { AgentStatus } from '@/types/electron';
 import { STATUS_COLORS } from '../constants';
 import { AgentMark } from '@/components/ui';
@@ -32,7 +33,7 @@ export default function SidebarAgentList({
     <div className="p-2 space-y-0.5">
       {agents.map((agent, index) => {
         const name = agent.name || `Agent ${agent.id.slice(0, 6)}`;
-        const projectName = agent.projectPath.split('/').pop() || '';
+        const projectName = lastPathPart(agent.projectPath);
         const status = STATUS_COLORS[agent.status] || STATUS_COLORS.idle;
         const isFocused = focusedPanelId === agent.id;
         const isRunning = agent.status === 'running' || agent.status === 'waiting';

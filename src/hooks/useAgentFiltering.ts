@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isSuperAgentCheck, getStatusPriority, statusWord } from '@/app/agents/constants';
 import { applyOrder } from '@/components/TerminalsView/hooks/useProjectTabOrder';
+import { lastPathPart, tildePath } from '@/lib/display-path';
 
 interface UseAgentFilteringProps {
   agents: AgentStatus[];
@@ -23,9 +24,9 @@ export interface ProjectGroup {
 }
 
 /** The folder name, which is what the Dashboard tabs and the Projects page call a project. */
-export const projectName = (path: string): string => path.split('/').pop() || path;
+export const projectName = (path: string): string => lastPathPart(path) || path;
 
-export const tildePath = (path: string): string => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
+export { tildePath };
 
 /**
  * What each project is called in the picker and over its section: the folder
@@ -78,7 +79,7 @@ export function useAgentFiltering({ agents, projectFilter, statusFilter, searchQ
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(a => {
         const name = (a.name || '').toLowerCase();
-        const project = (a.projectPath.split('/').pop() || '').toLowerCase();
+        const project = lastPathPart(a.projectPath).toLowerCase();
         const task = (a.currentTask || '').toLowerCase();
         const branch = (a.branchName || '').toLowerCase();
         return name.includes(q) || project.includes(q) || task.includes(q) || branch.includes(q);

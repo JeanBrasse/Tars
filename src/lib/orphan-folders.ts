@@ -1,5 +1,6 @@
 import type { DiskSpace, OrphanFolder, OrphanListing, OrphanRemovalProgress, OrphanRemovalReport } from '@/types/electron';
 import { flat } from '@/lib/stop-line';
+import { pathName } from '@/lib/display-path';
 
 /**
  * What Settings, System says of the folders no agent owns and of the disk, on
@@ -24,8 +25,8 @@ export function sizeLabel(bytes: number): string {
 /** The disk in whole GB, as its row reads. */
 const diskSize = (bytes: number) => `${Math.round(bytes / GB)} GB`;
 
-/** A project by its folder's name: its path holds the home. */
-const projectName = (project: string) => project.replace(/\/+$/, '').split('/').pop() || project;
+/** A project by its folder's name: its path holds the home. A Windows path's too (pathName reads `\`). */
+const projectName = (project: string) => pathName(project) || project;
 
 /** A folder by its project and its place under .worktrees: its path holds the home, and a name is whatever made it. */
 export function folderLabel(folder: Pick<OrphanFolder, 'project' | 'name'>): string {

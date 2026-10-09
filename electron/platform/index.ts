@@ -24,12 +24,14 @@ export { toLaunch, LaunchError, type Launch, type PosixLaunch, type DirectLaunch
 export { killTree, KillTreeError, type KillTreeResult, type KillTreeDeps, type KillTreeErrorCode } from './kill-tree';
 export { samePath, isUnder, isInsideWorktreesDir, isFilesystemRoot, pathKey } from './path-compare';
 export { isUnsafePathSegment } from './windows-names';
+export { errorReportsAvailable } from './error-reports';
 export { projectName } from './project-name';
 export {
   encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, memoryProjectDirName, knownProjectsByFolder,
   transcriptProjectDirName,
   type DecodeDeps,
 } from './claude-project-dir';
+export { windowsSoundCommand, type SoundCommand } from './sound';
 export { credentialStoreDirs } from './credential-stores';
 export {
   renameReplacingSync, rmRetryingSync, unlinkRetryingSync, RENAME_RETRY_BUDGET_MS, REMOVE_RETRY_BUDGET_MS,
@@ -39,3 +41,12 @@ export {
   restrictToOwnerSync, restrictToOwner, restrictDirToOwner, ownerOnlyDirSync, closesByAccessList, parseWhoamiUserSid, SYSTEM_SID,
   type OwnerOnlyResult, type OwnerOnlyDeps, type OwnerOnlyOptions,
 } from './owner-only';
+export { detectShells, type DetectedShells, type ShellChoice, type ShellChoiceId } from './shell-choices';
+export {
+  TITLE_BAR_OVERLAY_HEIGHT, WINDOWS_APP_USER_MODEL_ID, TRAY_PANEL_MARGIN,
+  isWindowsShell, titleBarOptions, parseTitleBarOverlay, closeAction, isClickThatClosedPanel, taskbarEdge, trayPanelPosition,
+  type Rect, type DisplayArea, type TaskbarEdge,
+} from './desktop-shell';
+export {
+  hermesDesktopConfigPath, tailscaleCandidates, tasmaniaTokenPath, type TasmaniaToken,
+} from './integration-paths';

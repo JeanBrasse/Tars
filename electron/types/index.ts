@@ -415,6 +415,8 @@ export interface AppSettings {
    * else cmd.exe. Read on Windows only; set from Settings > Terminal (D9).
    */
   terminalShell?: string;
+  /** Windows: the first close has explained that Tars keeps running in the tray. */
+  closeToTrayExplained?: boolean;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
   ampEnabled?: boolean;

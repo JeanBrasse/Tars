@@ -1,15 +1,15 @@
 import * as fs from 'fs';
 import * as os from 'os';
-import * as path from 'path';
+import { tasmaniaTokenPath } from '../platform';
 
 const TASMANIA_API_BASE = 'http://localhost:3999';
-const TOKEN_PATH = path.join(os.homedir(), 'Library', 'Application Support', 'Tasmania', '.control-api-token');
+const TOKEN = tasmaniaTokenPath({ home: os.homedir() });
 
 /** Read the Tasmania Control API auth token */
 export function getAuthToken(): string | null {
   try {
-    if (fs.existsSync(TOKEN_PATH)) {
-      return fs.readFileSync(TOKEN_PATH, 'utf-8').trim();
+    if (TOKEN.ok && fs.existsSync(TOKEN.path)) {
+      return fs.readFileSync(TOKEN.path, 'utf-8').trim();
     }
   } catch {
     // Token file not readable
@@ -19,6 +19,7 @@ export function getAuthToken(): string | null {
 
 /** Make an authenticated request to the Tasmania Control API */
 export async function tasmaniaFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  if (!TOKEN.ok) throw new Error(TOKEN.detail);
   const token = getAuthToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

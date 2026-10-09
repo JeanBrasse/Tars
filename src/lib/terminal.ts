@@ -1,4 +1,5 @@
 import type { Terminal } from 'xterm';
+import { rendererPlatform, terminalKeyAction } from './terminal-keys';
 
 /**
  * Strip Ink/ANSI cursor movement sequences that break during output replay.
@@ -241,7 +242,7 @@ export function passWheelToProgram(term: Terminal, send: (data: string) => void)
 
 /**
  * Install the terminal's custom key handler. xterm keeps exactly one, so every
- * key this app claims has to live here:
+ * key this app claims has to live here (terminalKeyAction says which):
  *
  * - Shift+Enter inserts a literal newline (bracketed paste) instead of
  *   submitting the current line.
@@ -249,6 +250,9 @@ export function passWheelToProgram(term: Terminal, send: (data: string) => void)
  *   paints its selection itself rather than making a DOM Selection, so the
  *   native copy had nothing to take and Cmd+C left the clipboard untouched.
  *   With no selection it falls through, which keeps Ctrl+C as interrupt.
+ * - On Windows, Ctrl+V pastes through xterm's own paste (bracketed when the
+ *   program asked for it) instead of sending ^V, and the page and panel
+ *   shortcuts pass by xterm to the window's listeners.
  *
  * @param term     - The xterm Terminal instance
  * @param sendFn   - Callback that forwards the escape sequence to the PTY/agent
@@ -257,22 +261,32 @@ export function attachShiftEnterHandler(
   term: Terminal,
   sendFn: (data: string) => void,
 ): void {
+  const platform = rendererPlatform();
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true;
 
-    if (event.key === 'Enter' && event.shiftKey) {
-      // Use bracket paste mode to insert a literal newline without submitting
-      sendFn('\x1b[200~\n\x1b[201~');
-      return false;
+    switch (terminalKeyAction(event, platform, term.hasSelection())) {
+      case 'newline':
+        // Use bracket paste mode to insert a literal newline without submitting
+        sendFn('\x1b[200~\n\x1b[201~');
+        return false;
+      case 'copy':
+        navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+        // Windows Terminal's rule: the copy consumes the selection, so the
+        // next Ctrl+C interrupts.
+        if (platform === 'win32') term.clearSelection();
+        return false;
+      case 'paste':
+        // Left to the browser: Chromium pastes into xterm's textarea, and
+        // xterm's own paste listener sends it, bracketed when the program
+        // asked for it. xterm only must not turn the key into ^V first.
+        return false;
+      case 'page':
+      case 'panel':
+        return false;
+      default:
+        return true;
     }
-
-    const copyChord = event.metaKey || (event.ctrlKey && event.shiftKey);
-    if (copyChord && (event.key === 'c' || event.key === 'C') && term.hasSelection()) {
-      navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
-      return false;
-    }
-
-    return true;
   });
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import type { AgentPermissionMode } from '@/types/agent';
+import { tildePath } from '@/lib/display-path';
 import type { TeamTemplate, TeamTemplateMember } from '@/types/electron';
 import { Button, Dropdown, PanelCaption, Textarea } from '@/components/ui';
 import { MembersTable } from './MembersTable';
@@ -9,7 +10,6 @@ import { TeamOptionsBody } from './TeamOptionsBody';
 import { teamSelectionSummary, worktreeCount } from './logic';
 import type { Project } from './types';
 
-const tildePath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
 
 export function TeamPanel(props: {
   projects: Project[];

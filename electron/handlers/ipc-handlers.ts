@@ -3028,7 +3028,9 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
           if (IGNORED_DIRS.has(entry.name)) continue;
           walk(full, depth + 1);
         } else if (!match || match(entry.name)) {
-          out.push(path.relative(root, full));
+          // With `/` between folders on every platform: the Code panel builds
+          // its tree on `/`, and Windows's `src\app\x.ts` was one flat name.
+          out.push(path.relative(root, full).split(path.sep).join('/'));
         }
       }
     };

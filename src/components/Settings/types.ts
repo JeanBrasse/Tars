@@ -137,6 +137,8 @@ export interface AppSettings {
   };
   terminalFontSize?: number;
   terminalTheme?: 'dark' | 'light';
+  /** Windows only: the shell a new terminal opens in, a path. Empty or unset: Tars's default. */
+  terminalShell?: string;
   statusLineEnabled?: boolean;
   /** Remote Hermes instance (external scheduler) */
   hermesGatewayUrl?: string;

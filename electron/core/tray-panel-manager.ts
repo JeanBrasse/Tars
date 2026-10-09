@@ -1,8 +1,11 @@
 import { BrowserWindow, screen } from 'electron';
 import { hardenWindow, isDevBuild, resolveDevUrl } from './window-manager';
 import * as path from 'path';
+import { isClickThatClosedPanel, isWindowsShell, trayPanelPosition } from '../platform/desktop-shell';
 
 let trayPanel: BrowserWindow | null = null;
+/** When the panel last hid because it lost the focus: a click on the icon does that first. */
+let hiddenByBlurAt: number | null = null;
 
 const PANEL_WIDTH = 800;
 const PANEL_HEIGHT = 540;
@@ -51,6 +54,7 @@ export function createTrayPanel(): BrowserWindow {
   }
 
   trayPanel.on('blur', () => {
+    hiddenByBlurAt = Date.now();
     hideTrayPanel();
   });
 
@@ -66,9 +70,33 @@ export function toggleTrayPanel(trayBounds: Electron.Rectangle): void {
     hideTrayPanel();
     return;
   }
+  // Windows: pressing the icon blurred the panel, which hid it; this is the
+  // same click arriving, and it closed the panel rather than asking for it.
+  if (isClickThatClosedPanel(process.platform, Date.now(), hiddenByBlurAt)) return;
 
   if (!trayPanel || trayPanel.isDestroyed()) {
     createTrayPanel();
+  }
+
+  // Windows: over the taskbar, wherever it is. The position
+  // below the icon is the macOS menu bar's, and on a bottom taskbar it put the
+  // panel below the screen.
+  if (isWindowsShell(process.platform)) {
+    // No bounds (an icon Windows keeps in the overflow flyout can report
+    // none): the display under the cursor, which just clicked it.
+    const cursor = screen.getCursorScreenPoint();
+    const display = trayBounds.width > 0 && trayBounds.height > 0
+      ? screen.getDisplayMatching(trayBounds)
+      : screen.getDisplayNearestPoint(cursor);
+    const { x, y } = trayPanelPosition({
+      trayBounds,
+      display,
+      panel: { width: PANEL_WIDTH, height: PANEL_HEIGHT },
+      cursor,
+    });
+    trayPanel!.setPosition(x, y);
+    trayPanel!.show();
+    return;
   }
 
   // Position below the tray icon, centered horizontally

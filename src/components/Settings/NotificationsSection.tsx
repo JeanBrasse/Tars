@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui';
+import { lastPathPart } from '@/lib/display-path';
 import { SettingsRow } from './SettingsRow';
 import { Toggle } from './Toggle';
 import type { AppSettings } from './types';
@@ -25,7 +26,7 @@ function SoundPicker({
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
 }) {
   const currentPath = appSettings.notificationSounds?.[soundKey];
-  const fileName = currentPath ? currentPath.split('/').pop() : null;
+  const fileName = currentPath ? lastPathPart(currentPath) : null;
 
   const handlePick = async () => {
     if (!window.electronAPI?.dialog?.openAudio) return;

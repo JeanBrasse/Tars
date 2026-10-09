@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Panel, Select, Dropdown } from '@/components/ui';
 import { SECTION_GROUPS } from './constants';
+import { offeredSettingsGroups } from '@/lib/claude-accounts-offered';
 import type { SettingsSection } from './types';
 
 interface SettingsSidebarProps {
@@ -21,13 +23,16 @@ const GroupMark = ({ open }: { open: boolean }) => (
 const CHILD_INDENT = 'pl-5';
 
 export const SettingsSidebar = ({ activeSection, onSectionChange }: SettingsSidebarProps) => {
+  // Not Claude accounts on a Windows build (lib/claude-accounts-offered.ts): read after hydration, as the bridge is.
+  const [groups, setGroups] = useState(SECTION_GROUPS);
+  useEffect(() => setGroups(offeredSettingsGroups(SECTION_GROUPS)), []);
   return (
     <>
       {/* Desktop Sidebar */}
       <Panel fill padded={false} className="w-[214px] shrink-0 hidden lg:flex">
         <nav data-testid="settings-nav" className="flex-1 min-h-0 overflow-y-auto p-2">
           <div className="space-y-1">
-            {SECTION_GROUPS.map((group) => {
+            {groups.map((group) => {
               const isOpen = group.children.some(c => c.id === activeSection);
               return (
                 <div key={group.id}>
@@ -83,7 +88,7 @@ export const SettingsSidebar = ({ activeSection, onSectionChange }: SettingsSide
           searchable
           value={activeSection}
           onChange={(v) => onSectionChange(v as SettingsSection)}
-          options={SECTION_GROUPS.flatMap((group) =>
+          options={groups.flatMap((group) =>
             group.children.map((child) => ({
               value: child.id,
               label: child.label,

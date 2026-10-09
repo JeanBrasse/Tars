@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
+import { panelShortcutIndex, rendererPlatform } from '@/lib/terminal-keys';
 
 interface UseTerminalKeyboardOptions {
   panelAgentIds: string[];
@@ -25,6 +26,7 @@ export function useTerminalKeyboard({
   onCycleTab,
   isFullscreen,
 }: UseTerminalKeyboardOptions) {
+  const platform = rendererPlatform();
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Ctrl+Tab / Ctrl+Shift+Tab: Cycle through custom tabs (browser-style)
     if (e.ctrlKey && e.key === 'Tab') {
@@ -33,9 +35,10 @@ export function useTerminalKeyboard({
       return;
     }
 
-    // Ctrl+1-9: Focus terminal by index
-    if (e.ctrlKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
-      const index = parseInt(e.key) - 1;
+    // Ctrl+1-9 (Alt+1-9 on Windows, where Ctrl+digit is the page): focus
+    // terminal by index
+    const index = panelShortcutIndex(e, platform);
+    if (index !== null) {
       if (index < panelAgentIds.length) {
         e.preventDefault();
         onFocusPanel(panelAgentIds[index]);
@@ -71,7 +74,7 @@ export function useTerminalKeyboard({
       e.preventDefault();
       onExitFullscreen();
     }
-  }, [panelAgentIds, onFocusPanel, onToggleFullscreen, onToggleBroadcast, onToggleSidebar, onNewAgent, onExitFullscreen, onCycleTab, isFullscreen]);
+  }, [panelAgentIds, onFocusPanel, onToggleFullscreen, onToggleBroadcast, onToggleSidebar, onNewAgent, onExitFullscreen, onCycleTab, isFullscreen, platform]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

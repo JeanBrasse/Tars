@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { joinPath, lastPathPart, toSlashes } from '@/lib/display-path';
 import {
   Search,
   FileSearch,
@@ -46,7 +47,7 @@ const FileTreeNode = memo(function FileTreeNode({
   return (
     <>
       {nodes.map((node) => {
-        const isModified = gitStatus.some((f) => node.path.endsWith(f));
+        const isModified = gitStatus.some((f) => toSlashes(node.path).endsWith(f));
         const isSelected = selectedFile === node.path;
 
         return (
@@ -148,7 +149,7 @@ function buildFileTree(paths: string[], basePath: string): FileNode[] {
         }
       } else {
         seen.add(pathKey);
-        const fullPath = `${basePath}/${pathKey}`.replace(/\r/g, '');
+        const fullPath = joinPath(basePath, pathKey).replace(/\r/g, '');
         const isFile = isLast;
         const node: FileNode = {
           name: part,
@@ -289,7 +290,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
         const result = await window.electronAPI.project.searchFiles(projectPath, searchQuery);
 
         if (result.success && result.files) {
-          setSearchResults(result.files.map(p => ({ path: `${projectPath}/${p}` })));
+          setSearchResults(result.files.map(p => ({ path: joinPath(projectPath, p) })));
         }
       } else {
         const found = await window.electronAPI.project.searchContent(projectPath, searchQuery);
@@ -311,7 +312,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
                 const lineNum = parseInt(line.slice(colonIndex + 1, secondColonIndex), 10);
                 const match = line.slice(secondColonIndex + 1).trim();
                 return {
-                  path: `${projectPath}/${filePath}`,
+                  path: joinPath(projectPath, filePath),
                   line: lineNum,
                   match: match.slice(0, 100),
                 };
@@ -421,7 +422,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
                 >
                   <div className="flex items-center gap-1">
                     <FileText className="w-3 h-3 text-text-muted shrink-0" />
-                    <span className="truncate">{result.path.split('/').pop()}</span>
+                    <span className="truncate">{lastPathPart(result.path)}</span>
                     {result.line && (
                       <span className="text-[10px] text-primary shrink-0">:{result.line}</span>
                     )}
@@ -470,7 +471,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
             <>
               <div className="px-3 py-1.5 border-b border-border-primary bg-bg-tertiary/20 flex items-center justify-between shrink-0">
                 <span className="text-xs text-text-muted truncate font-mono">
-                  {selectedFile.split('/').pop()}
+                  {lastPathPart(selectedFile)}
                 </span>
                 <div className="flex items-center gap-1">
                   <button
