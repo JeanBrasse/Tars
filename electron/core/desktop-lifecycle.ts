@@ -24,9 +24,9 @@ function emitBeforeQuit(): void {
 /**
  * One Tars per user data directory. A second launch hands over to the first
  * (`onSecondLaunch`, which shows its window) and must end at once: it has read
- * nothing yet, and anything it went on to do (bind the API port, save an empty
- * fleet over agents.json on quit) would be done by a second writer. False
- * means this process is the second one.
+ * app-settings.json and nothing else, written nothing, and anything it went on
+ * to do (bind the API port, save an empty fleet over agents.json on quit)
+ * would be done by a second writer. False means this process is the second one.
  */
 export function claimSingleInstance(onSecondLaunch: () => void, platform: NodeJS.Platform = process.platform): boolean {
   if (!isWindowsShell(platform)) return true;
@@ -127,7 +127,7 @@ export function installDesktopShell(opts: {
   platform?: NodeJS.Platform;
 }): void {
   const platform = opts.platform ?? process.platform;
-  registerDesktopShellHandlers({ getMainWindow: opts.getMainWindow });
+  registerDesktopShellHandlers({ getMainWindow: opts.getMainWindow, platform });
   if (!isWindowsShell(platform)) return;
   app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
   Menu.setApplicationMenu(null);

@@ -22,6 +22,10 @@ import type { FsProbe } from '../../../electron/platform/fs-probe';
  * 5. The "default" differs from what a terminal actually starts with no
  *    setting (resolveShell), so the row lies about it.
  * 6. Environment keys are read case-sensitively (Path vs PATH, ProgramFiles).
+ * 7. A SystemRoot, ComSpec, ProgramFiles or LOCALAPPDATA that is not a plain
+ *    absolute path (`Windows`, `C:Windows`, `cmd.exe`, `Program Files`) is
+ *    trusted, so a shell planted in the working directory, an agent's
+ *    project, is offered.
  */
 
 function fakeWinFs(files: string[]): FsProbe {
@@ -112,6 +116,24 @@ describe('detectShells', () => {
     const env = { ...STOCK_ENV, Path: 'C:\\Windows\\System32' };
     const fs = fakeWinFs(['C:\\Windows\\System32\\bash.exe', 'C:\\Windows\\System32\\git.exe']);
     expect(byId(detectShells({ platform: 'win32', env, fs }))['git-bash']).toBeUndefined();
+  });
+
+  it('7. reads SystemRoot and ComSpec only when they are plain absolute paths', () => {
+    const planted = ['Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'Windows\\System32\\cmd.exe', 'cmd.exe'];
+    for (const [SystemRoot, ComSpec] of [['Windows', 'cmd.exe'], ['C:Windows', 'Windows\\System32\\cmd.exe'], ['\\Windows', undefined]]) {
+      const env = { ...STOCK_ENV, Path: '', SystemRoot, ComSpec };
+      const r = byId(detectShells({ platform: 'win32', env, fs: fakeWinFs([...planted, PS51, CMD]) }));
+      expect(r.powershell, `${SystemRoot} ${ComSpec}`).toBe(PS51);
+      expect(r.cmd, `${SystemRoot} ${ComSpec}`).toBe(CMD);
+    }
+  });
+
+  it('7. looks for pwsh and Git Bash only under plain absolute ProgramFiles and LOCALAPPDATA', () => {
+    const env = { ...STOCK_ENV, Path: '', ProgramFiles: 'Program Files', LOCALAPPDATA: 'AppData\\Local' };
+    const fs = fakeWinFs([PS51, CMD, 'Program Files\\PowerShell\\7\\pwsh.exe', 'Program Files\\Git\\bin\\bash.exe', 'AppData\\Local\\Programs\\Git\\bin\\bash.exe']);
+    const r = byId(detectShells({ platform: 'win32', env, fs }));
+    expect(r.pwsh).toBeNull();
+    expect(r['git-bash']).toBeUndefined();
   });
 
   it('reads environment keys whatever their case', () => {

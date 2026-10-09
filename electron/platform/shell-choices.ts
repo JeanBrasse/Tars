@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { realFs, type Env, type FsProbe } from './fs-probe';
 import { envValue } from './path-env';
-import { findOnPath } from './cli-binary';
+import { findOnPath, isPlainAbsolute } from './cli-binary';
 import { resolveShell } from './shell';
 
 /**
@@ -38,7 +38,12 @@ export function detectShells(opts: {
   if (platform !== 'win32') return null;
   const env = opts.env ?? process.env;
   const fs = opts.fs ?? realFs;
-  const read = (name: string) => envValue(env, name, 'win32');
+  // A folder or file the environment names counts only as a plain absolute
+  // path: a relative one would be found against the working directory.
+  const read = (name: string) => {
+    const value = envValue(env, name, 'win32');
+    return value && isPlainAbsolute(value) ? value : undefined;
+  };
   const firstFile = (candidates: (string | undefined)[]) =>
     candidates.find((p): p is string => !!p && fs.isFile(p)) ?? null;
 

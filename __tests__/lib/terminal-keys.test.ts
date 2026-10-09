@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import type { Terminal } from 'xterm';
 
 import { terminalKeyAction, pageShortcutDigit, panelShortcutIndex, type KeyLike } from '@/lib/terminal-keys';
+import { attachShiftEnterHandler } from '@/lib/terminal';
 
 /**
  * Who a key belongs to: the page, the terminal panels, the terminal's own
@@ -25,6 +27,9 @@ import { terminalKeyAction, pageShortcutDigit, panelShortcutIndex, type KeyLike 
  *    stop working.
  * 6. A page shortcut fires while the user types in a real text field (an
  *    input, a textarea that is not xterm's, a select, contentEditable).
+ * 7. win32: Alt+digit is taken from the program when no panel answers it (a
+ *    terminal outside the Dashboard, or a digit past the last panel), so the
+ *    key is lost: a program's Meta+N never arrives and nothing is focused.
  */
 
 type Target = { tagName: string; isContentEditable?: boolean; className?: string } | null;
@@ -109,7 +114,7 @@ describe('win32', () => {
     expect(panelShortcutIndex(key('1', { altKey: true }), W)).toBe(0);
     expect(panelShortcutIndex(key('9', { altKey: true }), W)).toBe(8);
     expect(panelShortcutIndex(key('0', { altKey: true }), W)).toBeNull();
-    expect(terminalKeyAction(key('3', { altKey: true }), W, false)).toBe('panel');
+    expect(terminalKeyAction(key('3', { altKey: true }), W, false, () => true)).toBe('panel');
     // AltGr: Ctrl+Alt.
     expect(panelShortcutIndex(key('@', { altKey: true, ctrlKey: true }, 'Digit0'), W)).toBeNull();
     expect(panelShortcutIndex(key('~', { altKey: true, ctrlKey: true }, 'Digit2'), W)).toBeNull();
@@ -117,6 +122,17 @@ describe('win32', () => {
     expect(terminalKeyAction(key('@', { altKey: true, ctrlKey: true }, 'Digit0'), W, false)).toBe('program');
     expect(pageShortcutDigit(key('@', { altKey: true, ctrlKey: true }, 'Digit0'), W, XTERM)).toBeNull();
     expect(panelShortcutIndex(key('1', { altKey: true, shiftKey: true }), W)).toBeNull();
+  });
+
+  it('7. Alt+digit is a panel only where a panel answers it, the program\'s key everywhere else', () => {
+    const twoPanels = (index: number) => index < 2;
+    expect(terminalKeyAction(key('2', { altKey: true }), W, false, twoPanels)).toBe('panel');
+    expect(terminalKeyAction(key('3', { altKey: true }), W, false, twoPanels)).toBe('program');
+    expect(terminalKeyAction(key('9', { altKey: true }), W, false, twoPanels)).toBe('program');
+    // A terminal with no panels behind it: the agent window, the quick terminal, the tray's.
+    expect(terminalKeyAction(key('1', { altKey: true }), W, false)).toBe('program');
+    // darwin and linux never hand a panel key past xterm, panels or not.
+    for (const p of ['darwin', 'linux']) expect(terminalKeyAction(key('1', { altKey: true }), p, false, () => true)).toBe('program');
   });
 
   it('Ctrl+C copies a selection and interrupts without one', () => {
@@ -137,5 +153,31 @@ describe('win32', () => {
     for (const k of [key('r', { ctrlKey: true }), key('w', { ctrlKey: true }), key('z', { ctrlKey: true }), key('a'), key('Tab', { ctrlKey: true })]) {
       expect(terminalKeyAction(k, W, false)).toBe('program');
     }
+  });
+});
+
+describe('the terminal\'s key handler (attachShiftEnterHandler)', () => {
+  const g = globalThis as unknown as { window?: unknown };
+  afterEach(() => { delete g.window; });
+
+  /** xterm's answer for a keydown: true lets xterm send it to the program. */
+  function handlerOn(platform: string, hasPanel?: (index: number) => boolean) {
+    g.window = { electronAPI: { platform } };
+    let handler: ((e: KeyboardEvent) => boolean) | undefined;
+    const term = {
+      attachCustomKeyEventHandler: (fn: (e: KeyboardEvent) => boolean) => { handler = fn; },
+      hasSelection: () => false,
+      getSelection: () => '',
+      clearSelection: () => {},
+    };
+    attachShiftEnterHandler(term as unknown as Terminal, () => {}, hasPanel);
+    return (k: KeyLike) => handler!({ ...k, type: 'keydown' } as unknown as KeyboardEvent);
+  }
+
+  it('7. on win32, keeps Alt+digit from the program only for a panel that answers it', () => {
+    expect(handlerOn('win32')(key('1', { altKey: true }))).toBe(true);
+    expect(handlerOn('win32', (i) => i < 2)(key('2', { altKey: true }))).toBe(false);
+    expect(handlerOn('win32', (i) => i < 2)(key('3', { altKey: true }))).toBe(true);
+    expect(handlerOn('darwin', () => true)(key('1', { altKey: true }))).toBe(true);
   });
 });

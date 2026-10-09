@@ -40,12 +40,19 @@ function digitRowKey(e: KeyLike): string | null {
  * darwin/linux: exactly the rules this handler always had (Cmd+C, or
  * Ctrl+Shift+C, with a selection copies). win32, as in Windows Terminal:
  * Ctrl+C copies when there is a selection and interrupts when there is none,
- * Ctrl+V and Ctrl+Shift+V paste, Ctrl+digit is a page and Alt+1..9 a panel.
- * Ctrl+Alt is AltGr there and always stays the program's.
+ * Ctrl+V and Ctrl+Shift+V paste, Ctrl+digit is a page and Alt+1..9 a panel
+ * when `hasPanel` says one answers that index (the Dashboard's): anywhere
+ * else Alt+digit stays the program's, its Meta+digit. Ctrl+Alt is AltGr there
+ * and always stays the program's.
  */
 export type TerminalKeyAction = 'newline' | 'copy' | 'paste' | 'page' | 'panel' | 'program';
 
-export function terminalKeyAction(e: KeyLike, platform: string, hasSelection: boolean): TerminalKeyAction {
+export function terminalKeyAction(
+  e: KeyLike,
+  platform: string,
+  hasSelection: boolean,
+  hasPanel: (index: number) => boolean = () => false,
+): TerminalKeyAction {
   if (e.key === 'Enter' && e.shiftKey) return 'newline';
   const isC = e.key === 'c' || e.key === 'C';
   if (platform !== 'win32') {
@@ -56,7 +63,8 @@ export function terminalKeyAction(e: KeyLike, platform: string, hasSelection: bo
   if (ctrlOnly && isC) return hasSelection ? 'copy' : 'program';
   if (ctrlOnly && (e.key === 'v' || e.key === 'V')) return 'paste';
   if (pageShortcutDigit(e, platform, null) !== null) return 'page';
-  if (panelShortcutIndex(e, platform) !== null) return 'panel';
+  const panel = panelShortcutIndex(e, platform);
+  if (panel !== null && hasPanel(panel)) return 'panel';
   return 'program';
 }
 

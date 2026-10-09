@@ -5,8 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * (desktop-lifecycle.ts): one instance, the close to the tray, no menu.
  *
  * How it fails, written before the session-end code (2026-09-26; the rest of
- * the file was already there and the review's mutant, the win32 gate removed
- * from the menu call, survived every test):
+ * the file was already there, and a mutant removing the win32 gate from the
+ * menu call survived every test):
  * 1. darwin/linux: the application menu is removed (on macOS that is Cmd+Q,
  *    Cmd+C, Cmd+V and every Edit command), an AppUserModelId is set, the
  *    single-instance lock is taken, or a close, before-quit or session-end

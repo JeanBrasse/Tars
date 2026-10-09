@@ -412,8 +412,8 @@ export interface AppSettings {
    * The shell a terminal runs on Windows: a path (Git Bash is
    * `C:\Program Files\Git\bin\bash.exe`; a bare `bash` finds WSL's first), or a
    * name on the PATH such as `pwsh`. Unset: pwsh.exe, else Windows PowerShell,
-   * else cmd.exe. Read on Windows only. Nothing in Settings sets it yet: until
-   * a picker is added there, it is set by hand in app-settings.json.
+   * else cmd.exe. Read on Windows only, where Settings > Terminal sets it (the
+   * Shell row: a shell it found, or a path typed in).
    */
   terminalShell?: string;
   /** Windows: the first close has explained that Tars keeps running in the tray. */

@@ -274,6 +274,11 @@ export default function TerminalsView() {
   // Broadcast must be initialized before multiTerminal so we can pass broadcastMode
   const broadcast = useBroadcast();
 
+  // The panels on screen, for Windows' Alt+digit inside a terminal: a panel
+  // that exists takes it, any other stays the program's (set below, once known).
+  const panelIdsRef = useRef<string[]>([]);
+  const hasPanel = useCallback((index: number) => index < panelIdsRef.current.length, []);
+
   // Core hooks - delay terminal init until settings are loaded to avoid wrong font size
   const multiTerminal = useMultiTerminal({
     agents: terminalSettingsLoaded ? visibleAgents : [],
@@ -287,6 +292,7 @@ export default function TerminalsView() {
     theme: terminalTheme,
     onTerminalReady: handleTerminalReady,
     broadcastMode: broadcast.broadcastMode,
+    hasPanel,
   });
   // Expose focusTerminal to handleTerminalReady via a ref to break the cycle.
   // Written in an effect, not during render: a ref assignment during render is
@@ -476,6 +482,7 @@ export default function TerminalsView() {
     () => grid.visiblePanels.map(p => p.agentId),
     [grid.visiblePanels]
   );
+  useEffect(() => { panelIdsRef.current = visibleAgentIds; }, [visibleAgentIds]);
 
   useTerminalKeyboard({
     panelAgentIds: visibleAgentIds,

@@ -3,15 +3,15 @@ import { describe, it, expect, vi } from 'vitest';
 /**
  * darwin and linux after the integration paths moved to electron/platform: the
  * Hermes Desktop config, the tailscale candidates and the Tasmania token are
- * the strings the upstream code built before, to the byte. `path` is POSIX's
+ * the strings the code built inline before, to the byte. `path` is POSIX's
  * here, as it is on a Mac and on Linux, so the literals hold on any host.
  *
  * How it can fail:
- * 1. a path differs from upstream's `path.join(os.homedir(), 'Library', ...)`
+ * 1. a path differs from the former `path.join(os.homedir(), 'Library', ...)`
  *    (a win32 separator, an %APPDATA% read, a folder renamed);
  * 2. the tailscale list changes: order, an entry added or dropped, a disk
  *    probe or a PATH lookup on a platform that never had one;
- * 3. linux, which upstream treats as darwin here, starts to differ from it.
+ * 3. linux, which the code always treated as darwin here, starts to differ from it.
  */
 
 vi.mock('path', async () => {
