@@ -339,7 +339,7 @@ taller than the word beside it) so `ui/Button` and `ui/Field` both hard-code
 ## Components
 
 Everything that defines raw appearance is meant to live in `src/components/ui/`.
-That is the rule `scripts/design-lint.sh` protects: it greps the `.ts`, `.tsx`
+That is the rule `scripts/design-lint.mjs` protects: it reads the `.ts`, `.tsx`
 and `.css` files under `src/` for banned styling and excludes two paths,
 `src/components/ui/` and `src/app/icon.tsx`. The hex rule excludes one more,
 `src/app/globals.css`, where the colours are named.
@@ -513,7 +513,7 @@ progress.
   app icon are a 4×4 grid of them that fills. `src/components/Brand.tsx` is the
   single source of the identity: rebranding is editing that file and the OS icon,
   nothing else.
-- **Don't add a shadow.** `scripts/design-lint.sh` fails on `shadow-sm|md|lg|xl|2xl`,
+- **Don't add a shadow.** `scripts/design-lint.mjs` fails on `shadow-sm|md|lg|xl|2xl`,
   and `globals.css` neutralises anything matching `[class*="shadow-"]` with
   `box-shadow: none !important`. The pre-fork Dorothy utilities `.card-hover`,
   `.card-accent`, `.hover-lift` and `.shadow-elevated`, with its teal and its warm

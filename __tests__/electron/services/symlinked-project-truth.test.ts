@@ -33,7 +33,8 @@ const realBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-sym
 const REAL = path.join(realBase, 'checkout');
 const LINK = path.join(realBase, 'linked');
 fs.mkdirSync(REAL, { recursive: true });
-fs.symlinkSync(REAL, LINK);
+// A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
+fs.symlinkSync(REAL, LINK, 'junction');
 const SESSION = '4ab31f00-ce51-4676-ab80-4023cf6e3f4e';
 const SINCE = Date.parse('2026-09-24T03:00:00.000Z');
 const at = (s: number) => new Date(SINCE + s * 1000).toISOString();

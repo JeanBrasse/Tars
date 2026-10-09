@@ -128,7 +128,8 @@ describe('the source holds no invisible direction or zero-width character', () =
 
   it('reads the whole source, and finds none there', () => {
     const files = sourceFiles();
-    const rel = new Set(files.map(f => path.relative(ROOT, f)));
+    // Spelled with `/` whatever the platform's separator, as the names below are.
+    const rel = new Set(files.map(f => path.relative(ROOT, f).split(path.sep).join('/')));
     // A scan that reads nothing passes: the file where they were found must be in it, and the tree must be all there.
     for (const known of ['electron/utils/waiting-on.ts', 'src/app/chat/page.tsx', 'hooks/session-start.sh', 'e2e/surfaces.mjs', '__tests__/source-invisible-characters.test.ts', 'CLAUDE.md']) {
       expect(rel.has(known), `${known} was not read`).toBe(true);

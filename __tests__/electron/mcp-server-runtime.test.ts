@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { hasPosixModes, skipOnWindows } from '../setup/platform-limits';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 /**
  * Tars's own MCP servers run on the Node inside the app, not on whatever
@@ -62,6 +64,9 @@ import { execFileSync } from 'node:child_process';
  * 17. A start that did not write the launcher moves registrations over to
  *     whatever it would name: an unpackaged run must move nothing.
  *
+ * On Windows the launcher is a sh script, which Windows
+ * cannot run, so the cases that run it skip there, and the program the
+ * servers are registered on is `node` (6), the move-over included.
  * The Orchestrator's brief after #231 (2026-09-28), written before the fix:
  * 18. A packaged Tars started from its disk image (/Volumes/<image>/Tars.app)
  *     or translocated by macOS registers the seven servers with paths inside
@@ -137,6 +142,10 @@ import { setupMcpOrchestrator, setupOrchestratorSetupHandler } from '../../elect
 import { ipcMain } from 'electron';
 
 const launcher = () => path.join(home(), '.dorothy', 'bin', 'tars-mcp-node');
+/** What the servers are registered on from this host: the launcher, or `node` on Windows (6). */
+const program = () => (process.platform === 'win32' ? 'node' : launcher());
+/** Windows runs no sh script: the launcher itself cannot be run there. */
+const LAUNCHER_NOT_RUNNABLE = 'the launcher is a #!/bin/sh script, which Windows cannot run; the servers run on `node` there (case 6)';
 
 /** A program that prints what it was run with, standing in for the app binary. */
 function fakeApp(dir: string): string {
@@ -149,14 +158,17 @@ const run = (command: string, args: string[]) =>
   JSON.parse(execFileSync(command, args, { env: { PATH: '/nonexistent' } }).toString());
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-mcp-node-'));
-afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
+// Retried, and without blocking: on Windows the delegated run's agent, whose
+// working folder this is, holds it until the taskkill its stop() started has
+// run, which a synchronous retry would keep from running.
+afterAll(() => fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 // 30 s, not vitest's 5: these cases run the launcher through a real shell, and under a
 // gate's load (load average 100 to 180 on 2026-10-01) case 13 took 6.8 s and case 3
 // 5.2 s, both synchronous, so those are their real run times, and both failed the gate
 // on nothing (27 full-suite reports of 28/09 to 01/10). Quiet, the slowest is 3.9 s.
 describe('the program Tars runs its MCP servers on', { timeout: 30_000 }, () => {
-  it('1, 2. is an absolute launcher that runs the app binary as Node, with no PATH at all', () => {
+  it.skipIf(skipOnWindows(LAUNCHER_NOT_RUNNABLE))('1, 2. is an absolute launcher that runs the app binary as Node, with no PATH at all', () => {
     const app = fakeApp(path.join(scratch, 'one'));
 
     const command = mcpNodeCommand(app, 'darwin', true);
@@ -166,7 +178,7 @@ describe('the program Tars runs its MCP servers on', { timeout: 30_000 }, () => 
     expect(run(command, ['/some/bundle.js', '--flag'])).toEqual({ runAsNode: '1', args: ['/some/bundle.js', '--flag'] });
   });
 
-  it('3. survives an app path with a space, a quote and $(...), and runs none of it', () => {
+  it.skipIf(skipOnWindows(LAUNCHER_NOT_RUNNABLE))('3. survives an app path with a space, a quote and $(...), and runs none of it', () => {
     const app = fakeApp(path.join(scratch, "My Apps", "it's $(touch pwned)"));
 
     const command = mcpNodeCommand(app, 'linux', true);
@@ -177,7 +189,7 @@ describe('the program Tars runs its MCP servers on', { timeout: 30_000 }, () => 
 
   it('4. is readable, writable and runnable by its owner alone', () => {
     mcpNodeCommand(fakeApp(path.join(scratch, 'four')), 'darwin', true);
-    expect(fs.statSync(launcher()).mode & 0o777).toBe(0o700);
+    if (hasPosixModes()) expect(fs.statSync(launcher()).mode & 0o777).toBe(0o700);
   });
 
   it('5. follows the app when it moves, and is not rewritten when it did not', () => {
@@ -236,7 +248,7 @@ describe('registering the servers', () => {
     await setupMcpOrchestrator({} as never);
 
     for (const name of ['claude-mgr-orchestrator', 'tars-memory', 'claude-mgr-kanban']) {
-      expect(registry.get(name)?.command, name).toBe(launcher());
+      expect(registry.get(name)?.command, name).toBe(program());
     }
     expect(calls).toContain('remove claude-mgr-orchestrator');
   });
@@ -255,7 +267,7 @@ describe('registering the servers', () => {
     }
 
     await setupMcpOrchestrator({} as never);
-    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(program());
 
     // A start that finds no bundle records nothing either.
     fs.rmSync(path.join(home(), '.dorothy', 'mcp-servers-runtime.json'), { force: true });
@@ -266,7 +278,7 @@ describe('registering the servers', () => {
 
   it('9. registers nothing again at the next start', async () => {
     await setupMcpOrchestrator({} as never);
-    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(program());
     calls.length = 0;
 
     await setupMcpOrchestrator({} as never);
@@ -311,7 +323,7 @@ describe('the gate of #201', { timeout: 30_000 }, () => {
     expect(fs.existsSync(launcher())).toBe(false);
   });
 
-  it('13. falls back to the node on the PATH once the app it names is gone', () => {
+  it.skipIf(skipOnWindows(LAUNCHER_NOT_RUNNABLE))('13. falls back to the node on the PATH once the app it names is gone', () => {
     const app = fakeApp(path.join(scratch, 'gone'));
     mcpNodeCommand(app, 'darwin', true);
     fs.rmSync(app);
@@ -336,7 +348,7 @@ describe('the gate of #201', { timeout: 30_000 }, () => {
     expect(fs.readFileSync(launcher(), 'utf-8')).toContain(appImage);
   });
 
-  it('15. writes nothing through a symlinked ~/.dorothy/bin', () => {
+  it.skipIf(cannotSymlink())('15. writes nothing through a symlinked ~/.dorothy/bin', () => {
     const elsewhere = path.join(scratch, 'elsewhere');
     fs.mkdirSync(elsewhere, { recursive: true });
     fs.symlinkSync(elsewhere, path.join(home(), '.dorothy', 'bin'));
@@ -356,7 +368,7 @@ describe('the gate of #201', { timeout: 30_000 }, () => {
     }
     otherState.failing = true;
     await setupMcpOrchestrator({} as never);
-    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(program());
 
     calls.length = 0;
     await setupMcpOrchestrator({} as never);
@@ -365,7 +377,7 @@ describe('the gate of #201', { timeout: 30_000 }, () => {
 
     otherState.failing = false;
     await setupMcpOrchestrator({} as never);
-    expect(otherRegistry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(otherRegistry.get('claude-mgr-orchestrator')?.command).toBe(program());
     calls.length = 0;
     await setupMcpOrchestrator({} as never);
     expect(calls).toEqual([]);
@@ -383,6 +395,10 @@ describe('the gate of #201', { timeout: 30_000 }, () => {
 });
 
 describe('a start from a copy that will be gone', () => {
+  // A disk image (/Volumes) or an AppTranslocation copy is how macOS runs an
+  // app from where it will not last; Windows has neither, so 18 to 21 are
+  // macOS paths and the copy cases skip there (20, the lasting copy, runs).
+  const macOnly = it.skipIf(process.platform === 'win32');
   const installed = path.join(scratch, 'Applications', 'Tars.app', 'Contents', 'Resources');
   const translocated = path.join(scratch, 'private', 'var', 'folders', 'xy', 'T', 'AppTranslocation', '0A1B2C', 'd', 'Tars.app', 'Contents', 'Resources');
   const names = { 'mcp-orchestrator': 'claude-mgr-orchestrator', 'mcp-memory': 'tars-memory', 'mcp-kanban': 'claude-mgr-kanban' } as const;
@@ -399,7 +415,7 @@ describe('a start from a copy that will be gone', () => {
     fs.rmSync(path.join(home(), '.claude', 'mcp.json'), { force: true });
   });
 
-  it('18, 19. registers nothing from a translocated copy, and leaves the installed Tars\'s registrations and record alone', async () => {
+  macOnly('18, 19. registers nothing from a translocated copy, and leaves the installed Tars\'s registrations and record alone', async () => {
     (process as unknown as { resourcesPath: string }).resourcesPath = installed;
     await setupMcpOrchestrator({} as never);
     const before = JSON.stringify([...registry]);
@@ -427,7 +443,7 @@ describe('a start from a copy that will be gone', () => {
     expect(transient!('/opt/Tars/resources')).toBe(false);
   });
 
-  it('21. refuses the Settings button\'s setup from such a copy, and writes no config', async () => {
+  macOnly('21. refuses the Settings button\'s setup from such a copy, and writes no config', async () => {
     (process as unknown as { resourcesPath: string }).resourcesPath = translocated;
     const handle = vi.mocked(ipcMain.handle);
     handle.mockClear();
@@ -484,6 +500,6 @@ function handle(msg) {
 
     const servers = JSON.parse(fs.readFileSync(report, 'utf-8')) as { name: string; command: string }[];
     expect(servers.length).toBeGreaterThan(0);
-    for (const server of servers) expect(server.command, server.name).toBe(launcher());
+    for (const server of servers) expect(server.command, server.name).toBe(program());
   });
 });

@@ -74,7 +74,8 @@ That is `concurrently` over two things:
 
 1. `npm run dev`: `next dev` on 127.0.0.1, port 3000.
 2. `npm run electron:start`: `wait-on http://localhost:3000`, then
-   `tsc -p electron/tsconfig.json`, then `NODE_ENV=development electron .`.
+   `tsc -p electron/tsconfig.json`, then `node scripts/electron-dev.mjs .`, which sets
+   `NODE_ENV=development` in a way every shell runs, cmd.exe included, and starts `electron .`.
 
 `main` is `electron/dist/main.js`, so **the main process is compiled every launch** by that
 `tsc` step. If you edit anything under `electron/` you must restart: there is no watch.
@@ -337,10 +338,10 @@ that number is non-zero.
 ### Design lint: `npm run lint:design`
 
 ```bash
-bash scripts/design-lint.sh
+node scripts/design-lint.mjs
 ```
 
-Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components/ui/` and
+Reads the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components/ui/` and
 `src/app/icon.tsx`, for six banned patterns. Exits 1 on any hit:
 
 | check | pattern |
@@ -354,10 +355,12 @@ Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components
 
 The rule it enforces: `src/components/ui/` is the only place allowed to define raw appearance.
 
-It also exits 1 when grep could not search, instead of reading that as a clean tree: a file
-it cannot open, a pattern it cannot parse, or no file read at all. It prints how many files it
-read first. That count is the check for a missing `src/`: grep on macOS answers one that does
-not exist with the same silent 1 as a tree with nothing to report.
+It also exits 1 when it could not search, instead of reading that as a clean tree: a file
+it cannot open, a pattern it cannot parse, a missing `src/`, or no file read at all. It prints
+how many files it read first. It is the Node port of the grep script it replaced
+(`scripts/design-lint.sh`, which needed bash), with the same checks, lines and exit codes.
+It reads letters, digits and spaces as ASCII only, so it is stricter than grep in a UTF-8
+locale on macOS or Linux: it can flag a line grep let through, never the other way round.
 
 The hex rule excludes two more places, each because writing a colour out is their job:
 `src/app/globals.css`, where every colour the app uses is named once, and comment lines in
@@ -417,22 +420,25 @@ Run `npm run build:renderer` first if the renderer changed.
 npm run build:renderer
 ```
 
-This is the tricky one. Expanded:
+This is the tricky one. It runs `scripts/build-renderer.mjs`, which does, in this order:
 
 ```bash
 rm -rf .next out
 mv src/app/api src/app/_api_backup
-mv src/app/icon.tsx src/app/_icon_backup.tsx
-trap "mv src/app/_api_backup src/app/api; mv src/app/_icon_backup.tsx src/app/icon.tsx" EXIT
+mv src/app/icon.tsx src/app/_icon_backup.tsx      # when there is one
 ELECTRON_BUILD=1 next build
+mv src/app/_api_backup src/app/api                # always, once next build has stopped
+mv src/app/_icon_backup.tsx src/app/icon.tsx
 ```
 
 `next.config.ts` switches to `output: 'export'` when `ELECTRON_BUILD=1`, and a static export
 cannot contain route handlers or a dynamic `icon.tsx`: hence the move-and-restore dance. The
-`trap … EXIT` puts them back even on failure.
+script puts them back even on failure or on Ctrl+C, and exits with next build's code. A
+restore that fails is reported and fails the build.
 
-**If a build is killed with `SIGKILL` the trap does not run.** Symptom: `src/app/api` is gone
-and the dev server 404s every renderer API route. Recover manually:
+**If a build is killed with `SIGKILL` nothing can put them back.** Symptom: `src/app/api` is
+gone and the dev server 404s every renderer API route. The next `build:renderer` refuses to
+start while a `_backup` is left, and says so. Recover manually:
 
 ```bash
 ls src/app | grep _backup

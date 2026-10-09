@@ -6,7 +6,7 @@ import * as path from 'path';
 
 // Both route modules resolve paths from os.homedir() at import time.
 const h = vi.hoisted(() => ({
-  home: `${process.env.TMPDIR || '/tmp'}/dorothy-memroutes-test-${process.pid}`,
+  home: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `dorothy-memroutes-test-${process.pid}`),
 }));
 
 vi.mock('os', async (importOriginal) => {

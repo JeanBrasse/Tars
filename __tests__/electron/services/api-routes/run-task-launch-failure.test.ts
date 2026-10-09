@@ -164,14 +164,29 @@ process.stdin.on('data', chunk => {
     if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: {} });
     if (msg.method === 'session/new') send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 's1' } });
     if (msg.method === 'session/prompt') {
-      send({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ran as ' + process.env.TARS_NPX_STUB } } } });
+      send({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ran as ' + (process.env.TARS_NPX_STUB || process.argv[1]) } } } });
       send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
     }
   }
 });
 `);
-    const stub = path.join(dir, 'npx');
-    fs.writeFileSync(stub, `#!/bin/sh\nTARS_NPX_STUB="$0" exec "${process.execPath}" "${agentScript}" "$@"\n`, { mode: 0o755 });
+    let stub = path.join(dir, 'npx');
+    if (process.platform === 'win32') {
+      // npm's shim, which Tars reads through to node and the script it runs
+      // (platform/cli-binary.ts): the script, in the stub's folder, is what says which npx ran.
+      stub = path.join(dir, 'node_modules', 'npx-stub', 'npx-cli.js');
+      fs.mkdirSync(path.dirname(stub), { recursive: true });
+      fs.copyFileSync(agentScript, stub);
+      fs.writeFileSync(path.join(dir, 'npx.cmd'), [
+        '@ECHO off', 'GOTO start', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ':start', 'SETLOCAL', 'CALL :find_dp0', '',
+        'IF EXIST "%dp0%\\node.exe" (', '  SET "_prog=%dp0%\\node.exe"', ') ELSE (', '  SET "_prog=node"', '  SET PATHEXT=%PATHEXT:;.JS;=;%', ')', '',
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\npx-stub\\npx-cli.js" %*', '',
+      ].join('\r\n'));
+      // The node.exe beside the shim, which the shim prefers, as in Node's own folder.
+      try { fs.linkSync(process.execPath, path.join(dir, 'node.exe')); } catch { fs.copyFileSync(process.execPath, path.join(dir, 'node.exe')); }
+    } else {
+      fs.writeFileSync(stub, `#!/bin/sh\nTARS_NPX_STUB="$0" exec "${process.execPath}" "${agentScript}" "$@"\n`, { mode: 0o755 });
+    }
     settings = { cliPaths: { node: path.join(dir, 'node') } as AppSettings['cliPaths'] };
     // Answered at once and offline by a real npx, should the stub ever lose to one.
     launch = { command: 'npx', args: ['--version'] };

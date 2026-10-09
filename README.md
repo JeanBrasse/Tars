@@ -339,7 +339,7 @@ npx tsc --noEmit                       # renderer
 npx tsc -p electron/tsconfig.json --noEmit
 npx vitest run                         # unit
 npx eslint .
-bash scripts/design-lint.sh            # the design rules that can be linted
+node scripts/design-lint.mjs           # the design rules that can be linted
 npx playwright test                    # boots the real app and walks every surface
 ```
 

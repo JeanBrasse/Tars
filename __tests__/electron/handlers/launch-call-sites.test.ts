@@ -53,8 +53,9 @@ import { promisify } from 'node:util';
  * 12. win32: a terminal in Windows PowerShell 5.1 (an agent's, pty:create,
  *    shell:startPty, the quick terminal) inherits the PSModulePath of a Tars
  *    started from PowerShell 7, finds pwsh 7's modules first and loses core
- *    cmdlets (platform/child-env.ts); or a pwsh, Git Bash or CLI terminal
- *    loses the parent's value.
+ *    cmdlets (platform/child-env.ts; real spawns in
+ *    platform/psmodulepath-spawn.test.ts); or a pwsh, Git Bash or CLI
+ *    terminal loses the parent's value.
  * 13. darwin/linux: a terminal gets another environment than the parent's
  *    (a PSModulePath removed on the way).
  */

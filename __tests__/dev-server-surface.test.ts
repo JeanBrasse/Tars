@@ -96,8 +96,9 @@ describe('the routes next dev serves', () => {
 
   it('is the session reader and no other route handler', () => {
     // Anywhere under src/app, not only api/: a route.ts is a route wherever it sits.
+    // The names come back with the platform's separator, `\` on Windows.
     const routes = (fs.readdirSync(app, { recursive: true }) as string[])
-      .filter(file => /(^|\/)route\.(ts|tsx|js|mjs)$/.test(file))
+      .filter(file => /(^|[\\/])route\.(ts|tsx|js|mjs)$/.test(file))
       .sort();
     expect(routes).toEqual([path.join('api', 'claude', 'sessions', '[projectId]', '[sessionId]', 'route.ts')]);
   });

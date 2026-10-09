@@ -35,6 +35,35 @@ import { reviewDiff, resetReviewCache } from '../../../electron/services/git-rev
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
+/**
+ * Windows starts no extensionless script, and execFile finds git.exe there
+ * whatever the PATH holds first: the git that writes down its arguments
+ * (beforeEach) is never run. There the same lines are written down by
+ * execFile itself, for git, and for promisify's form of it, which git-review
+ * uses. Elsewhere child_process is as it is.
+ */
+const recorder = vi.hoisted(() => ({ log: '' }));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  if (process.platform !== 'win32') return actual;
+  const { promisify } = await import('util');
+  const { appendFileSync } = await import('fs');
+  const note = (file: unknown, args: unknown) => {
+    if (file === 'git' && Array.isArray(args)) appendFileSync(recorder.log, `${args.join(' ')}\n`);
+  };
+  const original = actual.execFile as unknown as ((...a: unknown[]) => unknown) & { [key: symbol]: (...a: unknown[]) => unknown };
+  const execFile = Object.assign((file: unknown, args: unknown, ...rest: unknown[]) => {
+    note(file, args);
+    return original(file, args, ...rest);
+  }, {
+    [promisify.custom]: (file: unknown, args: unknown, ...rest: unknown[]) => {
+      note(file, args);
+      return original[promisify.custom](file, args, ...rest);
+    },
+  });
+  return { ...actual, execFile };
+});
+
 let tmp: string;
 let repo: string;
 let log: string;
@@ -73,6 +102,11 @@ beforeEach(() => {
   fs.writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\nthree\n');
   fs.writeFileSync(path.join(repo, 'new.txt'), 'x\ny\n');
 
+  // On Windows execFile writes them down (the mock above).
+  if (process.platform === 'win32') {
+    log = recorder.log = path.join(tmp, 'git.log');
+    return;
+  }
   // Every git Tars runs goes through this one, which writes down its arguments.
   const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
   const bin = path.join(tmp, 'bin');
@@ -82,9 +116,14 @@ beforeEach(() => {
   vi.stubEnv('PATH', `${bin}:${process.env.PATH}`);
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  // Retried, and not synchronously: a patch past the cut ends git at
+  // maxBuffer, and execFile answers without waiting for git to exit. On
+  // Windows the folder git works in cannot be removed until it has, and rmSync
+  // does not retry that refusal at all (EBUSY on the folder's first rmdir);
+  // fs.promises.rm retries the whole removal, here for at most 5.5 s.
+  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 const listOnly = { listOnly: true } as Parameters<typeof reviewDiff>[1];

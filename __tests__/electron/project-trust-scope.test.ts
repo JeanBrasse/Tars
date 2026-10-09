@@ -86,7 +86,8 @@ describe('ensureProjectTrusted refuses a directory that would trust too much', (
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-trust-link-'));
     try {
       const link = path.join(dir, 'looks-like-a-project');
-      fs.symlinkSync(home(), link);
+      // A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
+      fs.symlinkSync(home(), link, 'junction');
 
       ensureProjectTrusted(link);
 

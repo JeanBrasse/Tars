@@ -32,6 +32,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { cloneDependencies, cloneArgs } from '../../../electron/services/worktree-deps';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 let root: string;
 let project: string;
@@ -124,7 +125,7 @@ describe("a new worktree's dependencies", () => {
     expect(result.skipped).toContainEqual({ dir: '', why: expect.stringContaining('clonefile failed') });
   });
 
-  it('5. a node_modules that is a link is not followed', async () => {
+  it.skipIf(cannotSymlink())('5. a node_modules that is a link is not followed', async () => {
     const elsewhere = path.join(root, 'elsewhere');
     fs.renameSync(path.join(project, 'node_modules'), elsewhere);
     fs.symlinkSync(elsewhere, path.join(project, 'node_modules'));
@@ -133,7 +134,7 @@ describe("a new worktree's dependencies", () => {
     expect(copied).not.toContain(path.join(project, 'node_modules'));
   });
 
-  it('8. leaves a link at the worktree\'s node_modules alone, even one that points nowhere', async () => {
+  it.skipIf(cannotSymlink())('8. leaves a link at the worktree\'s node_modules alone, even one that points nowhere', async () => {
     fs.symlinkSync(path.join(root, 'nowhere'), path.join(worktree, 'node_modules'));
     const copied: string[] = [];
     await cloneDependencies(project, worktree, { copy: async (_s, d) => { copied.push(d); throw new Error('no'); } });

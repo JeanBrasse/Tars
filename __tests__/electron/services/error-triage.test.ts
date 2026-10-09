@@ -14,6 +14,7 @@ import {
 } from '../../../electron/services/error-triage';
 import type { RelayMessage, RelayReply } from '../../../electron/services/hermes-relay';
 import { ERROR_REPORTS_DSN } from '../../../electron/services/error-reports';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The error triage, reproduce-and-report mode (step 3 of PLAN-RELAIS-SENTRY.md).
@@ -541,7 +542,7 @@ describe('the list of issues already filed', () => {
     issues = [issue(27)];
     await triageOnce(deps());
 
-    expect(fs.statSync(seenFile).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(seenFile).mode & 0o777).toBe(0o600);
   });
 
   it.each([

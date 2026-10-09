@@ -5,8 +5,8 @@ import { npmCommand } from '../../scripts/npm-command.mjs';
 
 /**
  * scripts/npm-command.mjs: how a script runs npm or npx with no shell, on
- * every platform. release.mjs and scope-checks.mjs spawned the bare names,
- * which on Windows are npm.cmd and npx.cmd: ENOENT without a shell, and with
+ * every platform. scope-checks.mjs (npm run e2e:auto) spawned the bare npx,
+ * which on Windows is npx.cmd: ENOENT without a shell, and with
  * one every argument goes through cmd.exe (CVE-2024-27980).
  *
  * The ways it can fail, each pinned below:
@@ -103,7 +103,7 @@ it('refuses a tool other than npm or npx', () => {
 });
 
 // The real npm and npx, started cold: a loaded windows-latest runner took more
-// than vitest's 5 s for `npm --version` (measured on CI).
+// than vitest's 5 s for `npm --version`.
 describe('on this machine', { timeout: 30_000 }, () => {
   it.for(['npm', 'npx'] as const)('runs %s with no shell', tool => {
     const { command, args } = npmCommand(tool, ['--version']);
@@ -115,7 +115,7 @@ describe('on this machine', { timeout: 30_000 }, () => {
   });
 
   it.runIf(process.platform === 'win32')('is needed here: the bare name the scripts spawned is not found', () => {
-    // The witness for Windows: what release.mjs and scope-checks.mjs did before.
+    // The witness for Windows: what scope-checks.mjs did before.
     expect(spawnSync('npm', ['--version']).error).toMatchObject({ code: 'ENOENT' });
   });
 });
