@@ -252,10 +252,11 @@ export class CodexProvider implements CLIProvider {
 
   /**
    * A TOML basic string. JSON string escaping is valid TOML for backslashes,
-   * double quotes and control characters (grok-provider.ts, same helper).
+   * double quotes and control characters, except DEL (U+007F), which JSON
+   * leaves raw and TOML refuses: escaped here.
    */
   private tomlString(value: string): string {
-    return JSON.stringify(value);
+    return JSON.stringify(value).replace(/\u007f/g, '\\u007F');
   }
 
   getMcpConfigStrategy(): 'flag' | 'config-file' {

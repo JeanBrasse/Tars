@@ -1001,8 +1001,11 @@ export interface AgentTerminals {
  * typed by hand that registers no session (codex, gemini) cannot be seen, and
  * is killed with the shell: a known Windows limit.
  */
-export function cliStartRefusal(agent: AgentStatus, start: Launch): string | undefined {
-  if (start.platform !== 'win32') return undefined;
+export function cliStartRefusal(
+  agent: AgentStatus,
+  start: Pick<Launch, 'platform'> | NodeJS.Platform = process.platform,
+): string | undefined {
+  if ((typeof start === 'string' ? start : start.platform) !== 'win32') return undefined;
   if (!agent.ptyId || !agent.currentSessionId || agent.sessionPtyId !== agent.ptyId) return undefined;
   return `${agent.name || agent.id} has a CLI session typed into its terminal by hand. Nothing was started: stop the agent first, or give it the task in its terminal.`;
 }
