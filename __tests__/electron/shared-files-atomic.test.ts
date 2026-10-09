@@ -84,6 +84,7 @@ import { ClaudeProvider } from '../../electron/providers/claude-provider';
 import { getAllProviders } from '../../electron/providers';
 import { setupMemoryBackends, setupOrchestratorSetupHandler, setupOrchestratorRemoveHandler } from '../../electron/services/mcp-orchestrator';
 import { enableStatusLine, disableStatusLine } from '../../electron/utils/statusline';
+import { nodeHookCommand } from '../../electron/utils/hook-command';
 import { KANBAN_FILE, dataPath } from '../../electron/constants';
 import type { AppSettings } from '../../electron/types';
 import { cannotSymlink } from '../setup/symlink-privilege';
@@ -368,6 +369,10 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
   const settingsNow = { env: { A: '1' }, permissions: { allow: ['Bash(git:*)'], deny: [] }, statusLine: { type: 'command', command: 'statusline.sh' } };
   const configureHooks = () => new ClaudeProvider().configureHooks(HOOKS_DIR);
   const stopHook = () => (readAsJson(claudeSettings()) as { hooks?: { Stop?: Array<{ hooks: Array<{ command: string }> }> } }).hooks?.Stop?.[0]?.hooks?.[0]?.command;
+  /** What the Stop entry runs: the .sh on darwin and linux, the Node runner on win32 (decision D1, hook-command.ts). */
+  const OUR_STOP = process.platform === 'win32'
+    ? nodeHookCommand(path.join(HOOKS_DIR, 'tars-hook.mjs'), 'on-stop')
+    : path.join(HOOKS_DIR, 'on-stop.sh');
 
   beforeEach(() => {
     fs.mkdirSync(path.dirname(claudeSettings()), { recursive: true });
@@ -378,7 +383,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
     await configureHooks();
 
     expect(readAsJson(claudeSettings())).toMatchObject(settingsNow);
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(stopHook()).toBe(OUR_STOP);
   });
 
   it('leaves the previous file whole when the write dies halfway', async () => {
@@ -404,7 +409,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 
     expect(seenMidway.length, 'the write was not cut into, so this proves nothing').toBeGreaterThan(0);
     for (const seen of seenMidway) expect(seen).toEqual(settingsNow);
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(stopHook()).toBe(OUR_STOP);
   });
 
   it('writes nothing when every hook is already there', async () => {
@@ -420,7 +425,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 
     await configureHooks();
 
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(stopHook()).toBe(OUR_STOP);
     if (hasPosixModes()) expect(fs.statSync(claudeSettings()).mode & 0o777).toBe(0o600);
   });
 
@@ -442,7 +447,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 
     expect(claudeWrote).toBe(true);
     expect(readAsJson(claudeSettings())).toMatchObject({ ...settingsNow, model: 'opus' });
-    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(stopHook()).toBe(OUR_STOP);
   });
 
   it('leaves a file that is not JSON exactly as it is, instead of the hooks alone', async () => {
@@ -581,6 +586,15 @@ describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has f
 describe("Claude's settings.json, through the status line Tars turns on at every launch", () => {
   const settingsDir = () => path.dirname(claudeSettings());
   const statusLine = () => (readAsJson(claudeSettings()) as { statusLine?: { command?: string } }).statusLine;
+  /**
+   * The command Tars's status line runs: its bash script in the data folder on
+   * darwin and linux, the bundled statusline.mjs through Node on win32
+   * (decision D1). The bundled hooks folder is where the electron mock above
+   * puts the app, this checkout.
+   */
+  const OUR_STATUS_LINE = process.platform === 'win32'
+    ? nodeHookCommand(path.join(process.cwd(), 'hooks', 'statusline.mjs'))
+    : dataPath('statusline.sh');
   const withoutStatusLine = () => {
     const rest = { ...(readAsJson(claudeSettings()) as Record<string, unknown>) };
     delete rest.statusLine;
@@ -595,7 +609,7 @@ describe("Claude's settings.json, through the status line Tars turns on at every
   it('changes statusLine and nothing else in a whole settings file', () => {
     enableStatusLine();
 
-    expect(statusLine()?.command).toBe(dataPath('statusline.sh'));
+    expect(statusLine()?.command).toBe(OUR_STATUS_LINE);
     expect(withoutStatusLine()).toEqual(fullSettings);
   });
 
@@ -618,7 +632,7 @@ describe("Claude's settings.json, through the status line Tars turns on at every
 
     expect(seenMidway.length, 'the write was not cut into, so this proves nothing').toBeGreaterThan(0);
     for (const seen of seenMidway) expect(seen).toEqual(fullSettings);
-    expect(statusLine()?.command).toBe(dataPath('statusline.sh'));
+    expect(statusLine()?.command).toBe(OUR_STATUS_LINE);
   });
 
   it('leaves the previous file whole when the write dies halfway', () => {

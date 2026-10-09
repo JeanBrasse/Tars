@@ -31,6 +31,8 @@ vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }));
 
 import * as os from 'node:os';
 import { removeLegacyHookLogs } from '../../../electron/services/hooks-manager';
+import { cannotSymlink } from '../../setup/symlink-privilege';
+import { skipOnWindows } from '../../setup/platform-limits';
 
 let dir: string;
 let files: string[];
@@ -47,15 +49,24 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * Windows never had those logs, and the product removes nothing there on
+ * purpose: no Tars ran the .sh hooks on Windows before they moved (audit A7),
+ * and without process.getuid no file passes the owner check (A31), as
+ * hooks-manager.ts says.
+ */
+const noLegacyLogs = () => skipOnWindows('no Tars ever wrote those /tmp logs on Windows, and removeLegacyHookLogs '
+  + 'removes nothing there by design (audits A7, A31, hooks-manager.ts); the removal runs on macOS, Linux and CI');
+
 describe('the logs the old hooks left in /tmp', () => {
-  it('are removed, both of them', () => {
+  it.skipIf(noLegacyLogs())('are removed, both of them', () => {
     for (const file of files) fs.writeFileSync(file, 'SESSION_START hook. AGENT_ID=a SESSION_ID=s\n');
 
     expect(removeLegacyHookLogs(files)).toEqual(files);
     for (const file of files) expect(fs.existsSync(file)).toBe(false);
   });
 
-  it('never follow a link planted there, nor remove the link', () => {
+  it.skipIf(cannotSymlink())('never follow a link planted there, nor remove the link', () => {
     const target = path.join(dir, 'somebody-else-s-file');
     fs.writeFileSync(target, 'keep me');
     fs.symlinkSync(target, files[0]);

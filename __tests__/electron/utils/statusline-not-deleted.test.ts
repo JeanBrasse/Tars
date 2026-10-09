@@ -25,6 +25,9 @@ vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
   return { ...actual, homedir: () => tmpHome, default: { ...actual, homedir: () => tmpHome } };
 });
+// The main process's own app: on win32 the status line is the bundled
+// hooks/statusline.mjs, found through app.getAppPath(), which is this checkout.
+vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }));
 vi.mock('../../../electron/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/constants')>();
   return { ...actual, DATA_DIR: tmpData, dataPath: (f: string) => path.join(tmpData, f) };
@@ -32,6 +35,10 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 
 const SETTINGS = path.join(tmpHome, '.claude', 'settings.json');
 const OUR_SCRIPT = path.join(tmpData, 'statusline.sh');
+/** What turning it on points the entry at: the script above, or on win32 the Node status line (decision D1). */
+const OUR_COMMAND = process.platform === 'win32'
+  ? `node "${path.join(process.cwd(), 'hooks', 'statusline.mjs').replace(/\\/g, '/')}"`
+  : OUR_SCRIPT;
 
 /** The shape of the real file: the key under test, and the nine around it. */
 function settingsWith(statusLine: unknown): Record<string, unknown> {
@@ -129,7 +136,7 @@ describe('turning it on', () => {
     const { enableStatusLine } = await load();
     enableStatusLine();
 
-    expect((onDisk().statusLine as { command: string }).command).toBe(OUR_SCRIPT);
+    expect((onDisk().statusLine as { command: string }).command).toBe(OUR_COMMAND);
     expect(Object.keys(onDisk())).toHaveLength(10);
     expect(onDisk().model).toBe('opus');
   });
@@ -142,7 +149,7 @@ describe('turning it on', () => {
 
     // The asymmetry is deliberate: switching ours on is a choice about which
     // script runs, switching it off is not a licence to delete theirs.
-    expect((onDisk().statusLine as { command: string }).command).toBe(OUR_SCRIPT);
+    expect((onDisk().statusLine as { command: string }).command).toBe(OUR_COMMAND);
   });
 });
 

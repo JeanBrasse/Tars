@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * permission-request.sh says what the dialog asks, not only that there is one
@@ -22,9 +23,11 @@ const HOOK = path.join(__dirname, '../../hooks/permission-request.sh');
 const received: Array<{ url: string; body: Record<string, unknown> }> = [];
 let server: http.Server;
 let port = 0;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-permission-hook-'));
+/** Made in beforeAll, so a file whose tests all skip makes nothing it would not remove. */
+let tmp: string;
 
 beforeAll(async () => {
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-permission-hook-'));
   server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', chunk => { raw += chunk; });
@@ -38,7 +41,10 @@ beforeAll(async () => {
   port = (server.address() as { port: number }).port;
 });
 
-afterAll(() => new Promise<void>(resolve => server.close(() => resolve())));
+afterAll(async () => {
+  await new Promise<void>(resolve => server.close(() => resolve()));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
 
 async function ask(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   received.length = 0;
@@ -57,7 +63,7 @@ async function ask(payload: Record<string, unknown>): Promise<Record<string, unk
   return post!.body;
 }
 
-describe('permission-request.sh, with a large input (the gate of #172)', () => {
+describe.skipIf(shHooksNotShipped())('permission-request.sh, with a large input (the gate of #172)', () => {
   // The whole tool_input went to curl as one argument: a Write of 1.5 MB never
   // reached Tars (argument list too long: macOS takes about 1 MB, Linux 128 KB
   // for one argument), and the agent stayed running with no dialog recorded.
@@ -84,7 +90,7 @@ describe('permission-request.sh, with a large input (the gate of #172)', () => {
   });
 });
 
-describe('permission-request.sh', () => {
+describe.skipIf(shHooksNotShipped())('permission-request.sh', () => {
   it('sends the tool and its input with the waiting status', async () => {
     const body = await ask({
       session_id: 's1', hook_event_name: 'PermissionRequest', tool_name: 'Bash',

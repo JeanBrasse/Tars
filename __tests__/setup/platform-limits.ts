@@ -26,8 +26,8 @@ export const POSIX_MODES_REASON = 'Windows has no POSIX permission bits: chmod o
   + 'asserted on macOS, Linux and CI, and the rest of the test runs here';
 
 export const ACCOUNTS_REASON = 'several Claude accounts are off on a Windows build until they are ported '
-  + '(decision D17: owner-only folders by POSIX modes, sign-in by the bare claude, no counters in the Node '
-  + 'status line; held there by windows-off.test.ts and claude-accounts-offered.test.ts); these run on macOS, Linux and CI';
+  + '(decision D17: owner-only folders by POSIX modes, sign-in by the bare claude; held '
+  + 'there by windows-off.test.ts and claude-accounts-offered.test.ts); these run on macOS, Linux and CI';
 
 const said = new Set<string>();
 
