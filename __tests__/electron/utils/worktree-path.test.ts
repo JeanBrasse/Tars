@@ -63,7 +63,7 @@ describe('resolveWorktreePath', () => {
 });
 
 /**
- * Windows names a branch must not give a folder (audit B W-01). The shape check
+ * Windows names a branch must not give a folder. The shape check
  * keeps out traversal, a drive, a backslash and a space; what it let through is
  * what Win32 itself rewrites. A device name opens the device, not a folder
  * (`feat/nul` is NUL, `com1.txt` is COM1), and a trailing dot or space is

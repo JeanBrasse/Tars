@@ -9,7 +9,7 @@ import {
 
 /**
  * argv to one Windows command line, quoted by us so node-pty receives a
- * string it will not re-quote (audit A26, A27).
+ * string it will not re-quote.
  *
  * How it fails, written before the code (2026-09-25):
  * 1. An argument with a space or tab is not quoted and splits.

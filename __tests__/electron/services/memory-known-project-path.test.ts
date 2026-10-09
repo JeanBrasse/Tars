@@ -5,8 +5,8 @@ import * as path from 'node:path';
 
 /**
  * Brain lists a Tars project whose memory Claude's folder holds once, under
- * the project's own path, on Windows (the reviewer's gate of
- * win/paths-memory-security). macOS and Linux list it as they always have.
+ * the project's own path, on Windows (found at review). macOS and Linux list
+ * it as they always have.
  *
  * MEMORY.md for `/Users/noah/My Project` is in Claude's folder,
  * `-Users-noah-My-Project`. A decoder that cannot rebuild the space reads that

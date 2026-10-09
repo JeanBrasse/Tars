@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { Env } from './fs-probe';
 
 /**
- * PATH in an environment block, per platform (audit A16, A17).
+ * PATH in an environment block, per platform.
  *
  * Windows spells the variable `Path` (what Electron inherits from Explorer),
  * `PATH` (from Git Bash or a script) or anything else: names are
@@ -98,8 +98,7 @@ function windowsEntryKey(entry: string): string {
  * choice, as on macOS), then the existing Path, then
  * %USERPROFILE%\.local\bin (the native claude.exe) and %APPDATA%\npm (npm's
  * global shims). Those two go last so that nothing dropped in them shadows a
- * System32 tool (the orchestrator's decision at win-reviewer's gate,
- * 2026-09-25). Each directory once, compared without case, first spelling
+ * System32 tool. Each directory once, compared without case, first spelling
  * kept. None of the macOS entries.
  */
 export function buildWindowsFullPath(extraPaths: string[], env: Env): string {

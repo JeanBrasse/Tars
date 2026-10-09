@@ -5,7 +5,7 @@ import { resolveCliBinary, type CliBinaryFailure } from './cli-binary';
 import { buildWindowsCommandLine, quoteWindowsArg, WindowsCommandLineError } from './windows-command-line';
 
 /**
- * A provider's command as the thing an agent's PTY runs (decision D2).
+ * A provider's command as the thing an agent's PTY runs.
  *
  * darwin/linux: today's shape, byte for byte, nothing parsed. The API path
  * (agent-routes.ts spawnAgentSession) spawns `/bin/bash -l -c "cd '<dir>' &&
@@ -18,8 +18,8 @@ import { buildWindowsCommandLine, quoteWindowsArg, WindowsCommandLineError } fro
  * (cli-binary.ts: a .exe, or node.exe plus an npm shim's script), and the
  * Windows command line built by us (windows-command-line.ts) for node-pty,
  * which starts the CLI itself in `cwd` through ConPTY. A prompt's newlines
- * therefore stay inside one argument and never reach a shell as lines (audit
- * A4). The caller spawns `pty.spawn(file, commandLine, { cwd, env })`.
+ * therefore stay inside one argument and never reach a shell as lines. The
+ * caller spawns `pty.spawn(file, commandLine, { cwd, env })`.
  */
 
 export interface PosixLaunch {

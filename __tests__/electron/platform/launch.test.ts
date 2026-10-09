@@ -5,7 +5,7 @@ import { PosixWordsError } from '../../../electron/platform/posix-words';
 import type { FsProbe } from '../../../electron/platform/fs-probe';
 
 /**
- * A provider's command, as the thing a PTY is spawned with (decision D2).
+ * A provider's command, as the thing a PTY is spawned with.
  *
  * How it fails, written before the code (2026-09-25):
  * 1. darwin/linux: the shape differs by one byte from what the call sites
@@ -28,7 +28,7 @@ import type { FsProbe } from '../../../electron/platform/fs-probe';
  *    resolved, or a line over the limit produces a launch instead of a
  *    typed LaunchError carrying its cause.
  * 9. win32: runsCommand is not true, so cliRunningIn cannot tell a CLI
- *    from a bare shell (audit A6).
+ *    from a bare shell.
  */
 
 // Today's call sites, copied as they stand at c349d7c1, as the reference.

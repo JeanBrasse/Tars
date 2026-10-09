@@ -4,7 +4,7 @@ import * as path from 'path';
  * The name a project goes by where a person reads it (the agent lines of the
  * Telegram, Slack and Discord bots): the last folder of its path, or ''
  * for a root or an empty path, which each caller replaces with its own
- * fallback (audit B/J-01).
+ * fallback.
  *
  * darwin/linux: the last `/` segment, exactly as `split('/').pop()` gave it
  * (a trailing `/` gives ''). `\` is an ordinary character there. win32: `\`

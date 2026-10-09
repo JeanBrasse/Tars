@@ -1,5 +1,5 @@
 /**
- * A path segment Win32 would not keep as written (audit B W-01).
+ * A path segment Win32 would not keep as written.
  *
  * Win32 drops a trailing dot or space from every segment, so `a.` and `a ` are
  * `a` to git, Explorer and every program that does not use `\\?\` paths, while

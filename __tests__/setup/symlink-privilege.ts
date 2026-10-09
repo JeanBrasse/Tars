@@ -6,8 +6,8 @@ import * as path from 'node:path';
  * Whether this process may create a symbolic link, for the tests that plant one.
  *
  * Windows gives the right to accounts with SeCreateSymbolicLinkPrivilege, which
- * an ordinary account only has with Developer Mode on. Nicolas's machine runs
- * without it (decision D4 in WINDOWS-PORT.md), and there fs.symlinkSync fails
+ * an ordinary account only has with Developer Mode on. On an account without
+ * it, fs.symlinkSync fails
  * with EPERM: 81 tests in 13 files failed on the link they set up, not on what
  * they assert. They skip there, saying why, and run everywhere a link can be
  * made: macOS, Linux, and CI's windows-latest, whose runner account has it.
@@ -18,7 +18,7 @@ import * as path from 'node:path';
  */
 
 export const SYMLINK_SKIP_REASON = 'this Windows account cannot create symbolic links '
-  + '(no SeCreateSymbolicLinkPrivilege: Developer Mode is off, decision D4); '
+  + '(no SeCreateSymbolicLinkPrivilege: Developer Mode is off); '
   + 'these tests run on macOS, Linux and CI windows-latest';
 
 let probed: boolean | undefined;

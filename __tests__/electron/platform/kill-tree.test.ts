@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { killTree, KillTreeError } from '../../../electron/platform/kill-tree';
 
 /**
- * Ending a process and every process under it on win32 (audit A21).
+ * Ending a process and every process under it on win32.
  *
  * How it fails, written before the code (2026-09-25):
  * 1. The kill goes through a shell string instead of taskkill's argv
@@ -16,7 +16,7 @@ import { killTree, KillTreeError } from '../../../electron/platform/kill-tree';
  * 4. Any other failure (access denied, taskkill missing) is swallowed.
  * 5. A pid that is not a positive integer reaches taskkill.
  * 6. darwin/linux: anything runs. The callers keep their process-group
- *    kill there (acp/client.ts `process.kill(-pid)`), untouched in this lot.
+ *    kill there (acp/client.ts `process.kill(-pid)`), untouched here.
  * 7. For real: a child of the process survives.
  */
 
