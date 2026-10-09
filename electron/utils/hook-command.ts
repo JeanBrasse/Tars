@@ -5,11 +5,13 @@ import * as path from 'path';
  * How Tars's hooks are started by the CLIs that run them, and how their
  * entries are kept in the CLIs' settings files.
  *
- * Decision D1 of the Windows port: on win32 every hook is the one Node runner,
+ * On win32 every hook is the one Node runner,
  * `node "<abs>/hooks/tars-hook.mjs" <event>` (and `statusline.mjs` for the
- * status line), because the .sh scripts cannot run there (audit A7 to A15). On
- * darwin and linux nothing here is used: the providers keep writing the .sh
- * paths they always wrote.
+ * status line), because the .sh scripts cannot run there: bash eats the
+ * backslashes of their unquoted path, jq is not installed, and Git Bash's
+ * curl cannot read the `-H @<(...)` process substitution that carries the
+ * token. On darwin and linux nothing here is used: the providers keep writing
+ * the .sh paths they always wrote.
  *
  * The one place that decides.
  */
@@ -59,15 +61,16 @@ export function nodeHookCommand(script: string, ...args: string[]): string {
 }
 
 /**
- * A matcher for the .sh command a previous Tars wrote: the bare absolute path
- * `<hooks>/<rel>` of a Tars hooks folder, and nothing else.
+ * Whether `file`, an absolute path, is `<hooks>/<rel>` in a hooks folder of
+ * Tars's, and nothing else.
  *
- * The name alone proves nothing: `on-stop.sh` or `notification.sh` is what a
- * user calls their own hook too, and what other apps ship (the installed
- * Dorothy keeps its own in `.../Programs/Dorothy/resources/app.asar.unpacked/
- * hooks/`). A false match repoints it at the runner and
- * deletes its copies, and Tars never touches another app's hooks. So a .sh
- * is Tars's only
+ * The name alone proves nothing: `on-stop.sh`, `notification.sh` or
+ * `statusline.mjs` is what a user calls their own script too, and what other
+ * apps ship (the installed Dorothy keeps its own in `.../Programs/Dorothy/
+ * resources/app.asar.unpacked/hooks/`). A false match repoints a user's hook
+ * at the runner and deletes its copies, or removes their status line, and
+ * Tars never touches another app's or a user's scripts. So a file is Tars's
+ * only
  *  - in `hooksDir`, this app's own hooks folder, the one the runner is
  *    resolved from (this install or this dev checkout),
  *  - or in a hooks folder that holds Tars's own `tars-hook.sh` or
@@ -76,24 +79,25 @@ export function nodeHookCommand(script: string, ...args: string[]): string {
  * and never under the CLI's config folder (`cliConfigDir`, or any `.claude`
  * or `.gemini` folder), whatever it holds: that is where users keep theirs.
  */
-export function legacyShCommand(rel: string, cliConfigDir: string, hooksDir: string): (command: string) => boolean {
+export function isTarsHooksFile(file: string, rel: string, cliConfigDir: string, hooksDir: string): boolean {
   const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const raw = file.trim();
+  if (!path.win32.isAbsolute(raw) && !path.posix.isAbsolute(raw)) return false;
+  const normalized = norm(raw);
+  if (!normalized.toLowerCase().endsWith(`/hooks/${rel}`.toLowerCase())) return false;
+  const hooksRoot = normalized.slice(0, normalized.length - rel.length - 1);
+  // First: this app's own hooks folder is never the CLI's config folder,
+  // even when a dev worktree puts it under <repo>/.claude/worktrees/.
+  if (hooksRoot.toLowerCase() === norm(path.resolve(hooksDir)).toLowerCase()) return true;
+  const lower = normalized.toLowerCase();
   const configRoot = norm(path.resolve(cliConfigDir)).toLowerCase();
-  const ownRoot = norm(path.resolve(hooksDir)).toLowerCase();
-  const tail = `/hooks/${rel}`;
-  return command => {
-    const raw = command.trim();
-    if (!path.win32.isAbsolute(raw) && !path.posix.isAbsolute(raw)) return false;
-    const file = norm(raw);
-    if (!file.toLowerCase().endsWith(tail.toLowerCase())) return false;
-    const hooksRoot = file.slice(0, file.length - rel.length - 1);
-    // First: this app's own hooks folder is never the CLI's config folder,
-    // even when a dev worktree puts it under <repo>/.claude/worktrees/.
-    if (hooksRoot.toLowerCase() === ownRoot) return true;
-    const lower = file.toLowerCase();
-    if (lower.startsWith(`${configRoot}/`) || /\/\.(claude|gemini)\//.test(lower)) return false;
-    return ['tars-hook.sh', 'tars-hook.mjs'].some(name => fs.existsSync(path.join(hooksRoot, name)));
-  };
+  if (lower.startsWith(`${configRoot}/`) || /\/\.(claude|gemini)\//.test(lower)) return false;
+  return ['tars-hook.sh', 'tars-hook.mjs'].some(name => fs.existsSync(path.join(hooksRoot, name)));
+}
+
+/** A matcher for the .sh command a previous Tars wrote: the bare absolute path of a Tars hooks file (isTarsHooksFile). */
+export function legacyShCommand(rel: string, cliConfigDir: string, hooksDir: string): (command: string) => boolean {
+  return command => isTarsHooksFile(command, rel, cliConfigDir, hooksDir);
 }
 
 /** A Node hook command Tars wrote, from any checkout: which script it runs and with what event. */
@@ -126,9 +130,10 @@ export type NodeHookSpec = {
  * A hook is Tars's when its command runs tars-hook.mjs with this event (from
  * this checkout or another) or is the .sh a previous Tars wrote for it. The
  * first such hook keeps its place, its matcher and its timeout, and gets the
- * command of this checkout; every other one is removed (the .sh copies the
- * old Gemini probe appended at each start, audit A11), with its entry when it
- * held nothing else. Hooks that are not Tars's are never touched. Returns
+ * command of this checkout; every other one is removed (the .sh copies
+ * Gemini's .sh wiring appended at each start on Windows, where it looked for
+ * `gemini/<file>` in a backslash path), with its entry when it held nothing
+ * else. Hooks that are not Tars's are never touched. Returns
  * whether anything changed, so a second run writes nothing.
  */
 export function mergeNodeHooks(hooks: HookTable, specs: NodeHookSpec[], hooksDir: string, timeout: number): boolean {

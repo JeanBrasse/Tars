@@ -2,20 +2,34 @@
 // The Tars hooks in Node: `node tars-hook.mjs <event>`, <event> being the
 // name of the .sh it stands for (`session-start`, `gemini/on-stop`, ...).
 //
-// Decision D1 of the Windows port: on Windows the .sh hooks cannot run
-// (bash eats the backslashes of their unquoted path, jq is absent, Git Bash's
-// curl cannot read `-H @<(tars_auth)`). This runner does what each script
-// does, post for post, with Node built-ins only: the same routes, headers and
-// bodies, the same retries and deadlines, the same answer on stdout, the same
-// logs. Configured on win32 only for now; the .sh stay what macOS and Linux
-// run. The .sh remain the reference: each handler names its script, and
-// __tests__/hooks/node-hook-runner.test.ts holds the two side by side.
+// On Windows the .sh hooks cannot run (bash eats the backslashes of their
+// unquoted path, jq is absent, Git Bash's curl cannot read
+// `-H @<(tars_auth)`). This runner does what each script does, post for
+// post, with Node built-ins only: the same routes, headers and fields, the
+// same retries and deadlines, the same answer on stdout, the same logs.
+// Configured on win32 only for now; the .sh stay what macOS and Linux run.
+// The .sh remain the reference: each handler names its script, and
+// __tests__/hooks/node-hook-runner.test.ts states what each .sh sends, case
+// by case, and runs the .sh beside the runner where bash, curl and jq exist.
 //
-// Where it differs on purpose: a Windows path is sent as valid JSON (the
-// Gemini notification pasted it raw, audit A13) and query values are encoded
-// (session-start pasted them raw, audit A14); the Gemini posts the .sh sends
-// in the background are awaited before exit (bounded by the same 3s); the
-// dates in the log lines are Node's.
+// The token, as tars-hook.sh sends it: on the hook posts (/api/hooks/*) only
+// once the port has proved to be this CLI's Tars; the bootstrap, memory
+// context and memory remember calls carry it, or the shared file's, without
+// that proof, as the .sh send them.
+//
+// Where it differs on purpose:
+// - every body is built by JSON.stringify, so a value the .sh paste raw into
+//   their JSON (a Windows path, a quote) still makes valid JSON: a Gemini
+//   notification from a Windows project path did not parse;
+// - values in a URL are encoded: the memory context's query, which
+//   session-start.sh pasted raw (a path holding `&` or `#` lost its end), and
+//   the agent id in the bootstrap URL;
+// - the Gemini posts the .sh sends in the background are awaited before exit
+//   (bounded by the same 3 s);
+// - a transcript is read backwards from its end, 1 MB at a time and no
+//   further than 8 MB from it (lastAssistantMessage in tars-hook-lib.mjs);
+// - the log lines carry Node's date, and a colon where on-stop.sh and
+//   task-completed.sh write a dash.
 
 import {
   apiUrl, appendLog, authHeader, codePoints, curl, echoHead, finish, headBytes, isFile, jqRaw, jqToString,

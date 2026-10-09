@@ -51,10 +51,10 @@ export const LEGACY_HOOK_LOGS = ['/tmp/dorothy-hooks.log', '/tmp/dorothy-hooks-d
  * otherwise delete the logs a Tars still on 1.7.9 is writing beside it.
  *
  * On Windows this removes nothing, and that is right: no Tars ever ran its
- * hooks there before they moved (the .sh could not run, audit A7), so there
- * are no such logs, and `process.getuid` does not exist, so no file can pass
- * the owner check (audit A31). The hooks-path lookup above needs no change:
- * `app.asar` is spelled the same in a Windows install.
+ * hooks there before they moved (the .sh could not run), so there are no
+ * such logs, and `process.getuid` does not exist, so no file can pass the
+ * owner check. The hooks-path lookup above needs no change: `app.asar` is
+ * spelled the same in a Windows install.
  */
 export function removeLegacyHookLogs(files = LEGACY_HOOK_LOGS): string[] {
   const removed: string[] = [];

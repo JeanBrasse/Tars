@@ -155,7 +155,7 @@ export class GeminiProvider implements CLIProvider {
       console.log('Gemini hooks directory not found at', geminiHooksDir);
       return;
     }
-    // Windows: the Node runner, not the .sh (decision D1, see hook-command.ts).
+    // Windows: the Node runner, not the .sh, which cannot run there (see hook-command.ts).
     if (usesNodeHooks(platform)) {
       configureGeminiNodeHooks(this.configDir, hooksDir);
       return;

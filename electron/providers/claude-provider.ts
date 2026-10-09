@@ -212,7 +212,7 @@ export class ClaudeProvider implements CLIProvider {
         settings.hooks = {};
       }
 
-      // Windows: the Node runner, not the .sh (decision D1, see hook-command.ts).
+      // Windows: the Node runner, not the .sh, which cannot run there (see hook-command.ts).
       if (usesNodeHooks(platform)) {
         const specs = hookFiles.map(({ type, file, matcher }) => ({
           type, matcher, event: file.replace(/\.sh$/, ''), isLegacy: legacyShCommand(file, this.configDir, hooksDir),

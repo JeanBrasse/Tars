@@ -1,8 +1,8 @@
 // What the .sh hooks get from bash, curl and jq, in Node built-ins only.
 //
-// The Node runner (tars-hook.mjs, decision D1 of the Windows port) has to post
-// exactly what the .sh hooks post, and those bodies carry the exact quirks of
-// the tools that build them: `$(...)` drops every trailing newline, `echo`
+// The Node runner (tars-hook.mjs, which Windows runs in their place) has to
+// post the values the .sh hooks post, and those carry the exact quirks of the
+// tools that build them: `$(...)` drops every trailing newline, `echo`
 // adds one, `head -c` cuts bytes where jq's `.[0:n]` cuts code points, `//`
 // treats false like null. Each helper below is one of those, named after it,
 // so a reader can hold the runner against the script line by line.
@@ -142,9 +142,11 @@ export function authHeader(token) {
 
 /**
  * tars-hook.sh, TARS_TOKEN_OK (upstream #212): whether the port is the Tars
- * that spawned this CLI, which alone gets the CLI's token. While Tars is down
- * any process may hold its port. So a fresh random challenge goes to
- * /api/health, and the answer must be sha256("<TARS_INSTANCE_ID>:<challenge>");
+ * that spawned this CLI, which alone gets the CLI's token on the hook posts
+ * (/api/hooks/*); the bootstrap and memory calls send it without asking, as
+ * the .sh send them (tokenWithFileFallback). While Tars is down any process
+ * may hold its port. So a fresh random challenge goes to /api/health, and
+ * the answer must be sha256("<TARS_INSTANCE_ID>:<challenge>");
  * the id itself never leaves. No token or no id: nothing is asked. No answer
  * within 5 s, longer than any post waits, or a wrong one: false.
  */
@@ -161,7 +163,8 @@ export async function tarsProvesInstance(env = process.env) {
 /**
  * The token for the calls that fall back to the shared file (bootstrap,
  * memory): the CLI's own, else ~/.dorothy/api-token when Tars did not start
- * this CLI. Hook posts never read the file (tars_auth).
+ * this CLI. Sent without the instance check, as the .sh send it. Hook posts
+ * never read the file (tars_auth).
  */
 export function tokenWithFileFallback(env = process.env) {
   const own = env.CLAUDE_MGR_API_TOKEN || '';

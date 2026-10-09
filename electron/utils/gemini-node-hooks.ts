@@ -8,8 +8,9 @@ import { mergeNodeHooks, legacyShCommand, type HookTable } from './hook-command'
  * A file of its own so the provider keeps a one-call early return.
  *
  * - `BeforeAgent`, where the .sh wiring says `UserPromptSubmit`, which Gemini
- *   CLI does not fire (https://geminicli.com/docs/hooks/, audit A12). The old
- *   entry is removed.
+ *   CLI does not fire (https://geminicli.com/docs/hooks/). The old entry is
+ *   removed. On darwin and linux the .sh wiring, and its `UserPromptSubmit`,
+ *   stay as they are: both fixes here are win32's only.
  * - The token. Gemini runs a hook with `sanitizeEnvironment(process.env)`
  *   (packages/core/src/hooks/hookRunner.ts). Redaction is off by default, but
  *   once a user turns on `security.environmentVariableRedaction.enabled`,
