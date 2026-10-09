@@ -9,8 +9,8 @@ import { POSIX_CORPUS } from './posix-corpus';
 import golden from './posix-golden.json';
 
 /**
- * Claude Code's folder for a project under `~/.claude/projects` (audit B H-01
- * to H-05), and the way back from the folder to the project.
+ * Claude Code's folder for a project under `~/.claude/projects`, and the way
+ * back from the folder to the project.
  *
  * Claude Code turns every character of the path that is not an ASCII letter or
  * digit into `-`. Tars assumed `/` and `.` only, which is the same thing for
@@ -97,7 +97,7 @@ describe('2, 3. the folder names to read, Claude\'s first', () => {
     }
   });
 
-  // The reviewer's gate: on darwin/linux `project_path: ".."` gave the old spelling `..`,
+  // Found at review: on darwin/linux `project_path: ".."` gave the old spelling `..`,
   // and memory-hub wrote into ~/.claude/memory. A name of dots only is never a folder to try.
   it('darwin/linux: never a spelling made of dots only', () => {
     for (const platform of ['darwin', 'linux'] as const) {

@@ -179,7 +179,7 @@ describe('the guard of the app\'s own Telegram routes', () => {
     const link = path.join(home, 'Documents', 'keys');
     fs.mkdirSync(path.dirname(link), { recursive: true });
     fs.rmSync(link, { force: true });
-    // A junction: Windows lets any account make one (decision D4); the type is ignored off Windows.
+    // A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
     fs.symlinkSync(ssh, link, 'junction');
     aliases.push(path.join(link, 'id_rsa'));
     for (const alias of aliases) expect(isSafeTelegramPath(alias), alias).toBe(false);

@@ -3,13 +3,13 @@ import * as path from 'path';
 
 /**
  * Claude Code's folder for a project under `~/.claude/projects`, and the way
- * back (audit B H-01 to H-05).
+ * back.
  *
  * Claude Code names the folder after the project's path with every character
  * that is not an ASCII letter or digit turned into `-`. Read on Windows from
- * the folders it wrote (2026-09-25): `C:\Users\nicol\Documents\Claude
- * Project\Tars` is `C--Users-nicol-Documents-Claude-Project-Tars` and
- * `C:\Users\nicol\.buzz` is `C--Users-nicol--buzz`. On macOS that is `/` and
+ * the folders it wrote (2026-09-25): `C:\Users\me\Documents\Claude
+ * Project\Tars` is `C--Users-me-Documents-Claude-Project-Tars` and
+ * `C:\Users\me\.buzz` is `C--Users-me--buzz`. On macOS that is `/` and
  * `.` for most paths, which is the rule Tars had written down, and why a path
  * with a space, an underscore or any other character, and every Windows path,
  * was looked for under a name Claude never gives.
@@ -41,8 +41,8 @@ function claudeHash(text: string): number {
  *
  * A spelling that is not one folder name is never tried. `/` alone turns `..`
  * into `..`, which is the parent of ~/.claude/projects, where memory-hub
- * writes: a name of dots only is dropped on every platform (the reviewer's
- * gate). On win32 the old spellings of a Windows path also keep `\` and `:`:
+ * writes: a name of dots only is dropped on every platform. On win32 the old
+ * spellings of a Windows path also keep `\` and `:`:
  * they name no folder Claude writes, and `C:\p\..\..\x` would walk out.
  * darwin/linux: no spelling holds a `/`, so only the dots are dropped there.
  */

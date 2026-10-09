@@ -4,7 +4,7 @@ import { POSIX_CORPUS } from './posix-corpus';
 import golden from './posix-golden.json';
 
 /**
- * Comparing two paths (audit B W-02, W-03, U-08). Three call sites compared
+ * Comparing two paths. Three call sites compared
  * strings built for POSIX: `want.startsWith(own + '/')` in kanban-board, a
  * trailing `/` stripped then `===` in kanban-automation, and
  * `/\/\.?worktrees\//` in claude-service and ipc-handlers. On Windows a
@@ -14,7 +14,7 @@ import golden from './posix-golden.json';
  *
  * How it can fail, written before the code:
  * 1. darwin/linux answer anything else than the expressions they replace
- *    (golden captured from windows 4b26873f, posix-golden.json);
+ *    (posix-golden.json, captured from the code before this change);
  * 2. win32 compares case: `C:\P` and `c:\p` are one directory on NTFS;
  * 3. win32 compares separators: `C:/p` and `C:\p` are one path;
  * 4. a trailing separator makes two spellings differ, or `C:\` stops being the
@@ -100,7 +100,7 @@ describe('win32', () => {
 });
 
 /**
- * isFilesystemRoot (the reviewer's gate): the project listings skipped `/` by
+ * isFilesystemRoot (found at review): the project listings skipped `/` by
  * string, so on Windows the folder `C--` (C:\) was a project.
  * 11. darwin/linux answer anything but `p === '/'`;
  * 12. win32 misses a drive root, a share root or `\` in any spelling, or takes
