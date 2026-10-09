@@ -1,6 +1,6 @@
 /**
  * A provider's POSIX command line read back into argv, for launching the CLI
- * without a shell (decision D2, B1).
+ * without a shell.
  *
  * The grammar is closed. It is what the 20 providers' buildInteractiveCommand
  * and the helpers in providers/cli-provider.ts emit, which

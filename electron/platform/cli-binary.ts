@@ -3,8 +3,7 @@ import { realFs, type Env, type FsProbe } from './fs-probe';
 import { envValue, getPath, pathEntries, unquoteEntry } from './path-env';
 
 /**
- * Which file to start for a CLI, and what goes before its arguments
- * (audit A5, A18, B/C-02, B/C-03).
+ * Which file to start for a CLI, and what goes before its arguments.
  *
  * On win32 neither node-pty nor child_process can start what `claude`,
  * `codex` or `npx` usually are there: node-pty and libuv look a bare name up
@@ -55,8 +54,8 @@ const w = path.win32;
 /**
  * Bounds on reading a shim. npm's and Node's shims are about 20 lines and
  * under 1 KB; anything past these is not one, and a hostile one must not
- * cost more than a few milliseconds (win-reviewer, 2026-09-25: 60 lines of
- * `SET "_prog=%_prog%"` used to expand to 60^4 values).
+ * cost more than a few milliseconds (60 lines of `SET "_prog=%_prog%"` used
+ * to expand to 60^4 values).
  */
 const MAX_SHIM_CHARS = 64 * 1024;
 const MAX_SHIM_LINES = 256;

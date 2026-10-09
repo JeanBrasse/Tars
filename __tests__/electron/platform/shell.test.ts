@@ -5,7 +5,7 @@ import { defaultShell } from '../../../electron/utils/default-shell';
 import type { FsProbe } from '../../../electron/platform/fs-probe';
 
 /**
- * The shell a human terminal runs (decision D3), and the arguments it gets.
+ * The shell a human terminal runs, and the arguments it gets.
  *
  * How it fails, written before the code (2026-09-25):
  * 1. darwin/linux: resolveShell returns anything but what defaultShell()
