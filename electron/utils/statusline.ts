@@ -3,6 +3,9 @@ import * as path from 'path';
 import * as os from 'os';
 import { DATA_DIR_SHELL, dataPath } from '../constants';
 import { updateSharedJsonSync } from './shared-file';
+import { usesNodeHooks, nodeHookCommand, parseNodeHookCommand } from './hook-command';
+import { getHooksPath } from './hooks-path';
+import { unlinkRetryingSync } from '../platform/rename-replacing';
 
 const STATUSLINE_SCRIPT = `#!/usr/bin/env bash
 # Dev Bar statusline for Claude Code
@@ -351,17 +354,37 @@ function updateClaudeSettings(change: (settings: Record<string, unknown>) => Rec
   if (outcome === 'busy') console.warn(`[statusline] ${CLAUDE_SETTINGS_PATH} kept changing, left as Claude Code wrote it`);
 }
 
+/** Where the platform decision and the hooks folder come from; the app passes neither. */
+type StatusLineOptions = { platform?: NodeJS.Platform; hooksDir?: string };
+
+/**
+ * On win32 the status line is hooks/statusline.mjs run by Node (decision D1),
+ * not a bash script: nothing is installed in ~/.dorothy, the command names
+ * the bundled file, quoted for Git Bash and PowerShell alike.
+ */
+function nodeStatusLineCommand(hooksDir: string): string {
+  return nodeHookCommand(path.join(hooksDir, 'statusline.mjs'));
+}
+
+/** A Node status line Tars wrote, from this checkout or another. */
+function isTarsNodeStatusLine(command: unknown): boolean {
+  const parsed = parseNodeHookCommand(command);
+  return !!parsed && !parsed.event && /(^|\/)hooks\/statusline\.mjs$/.test(parsed.script.replace(/\\/g, '/'));
+}
+
 /**
  * Enable the statusline: install script + add config to Claude settings.json
  */
-export function enableStatusLine(): void {
-  installScript();
+export function enableStatusLine({ platform = process.platform, hooksDir }: StatusLineOptions = {}): void {
+  const nodeForm = usesNodeHooks(platform);
+  const command = nodeForm ? nodeStatusLineCommand(hooksDir ?? getHooksPath()) : SCRIPT_PATH;
+  if (!nodeForm) installScript();
 
   updateClaudeSettings(settings => ({
     ...settings,
     statusLine: {
       type: 'command',
-      command: SCRIPT_PATH,
+      command,
       padding: 1,
     },
   }));
@@ -370,7 +393,7 @@ export function enableStatusLine(): void {
 /**
  * Disable the statusline: remove config from Claude settings.json + remove script
  */
-export function disableStatusLine(): void {
+export function disableStatusLine({ platform = process.platform }: StatusLineOptions = {}): void {
   updateClaudeSettings(settings => {
     // Only ours. `statusLine` is Claude Code's setting, not Tars's: a user can
     // point it at their own script, and Claude Code can write it itself.
@@ -381,7 +404,7 @@ export function disableStatusLine(): void {
     const configured = settings.statusLine as { command?: unknown } | undefined;
     const isOurs = !!configured
       && typeof configured === 'object'
-      && configured.command === SCRIPT_PATH;
+      && (configured.command === SCRIPT_PATH || (usesNodeHooks(platform) && isTarsNodeStatusLine(configured.command)));
     if (!isOurs) return undefined;
     const withoutOurs = { ...settings };
     delete withoutOurs.statusLine;
@@ -393,7 +416,7 @@ export function disableStatusLine(): void {
   // Remove cached rate-limits data so Usage page no longer shows stale quota
   const rateLimitsFile = dataPath('rate-limits.json');
   if (fs.existsSync(rateLimitsFile)) {
-    fs.unlinkSync(rateLimitsFile);
+    unlinkRetryingSync(rateLimitsFile);
   }
 }
 
