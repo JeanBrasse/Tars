@@ -6,8 +6,8 @@ import { accountsFile, readAccountsSettings } from '../../../electron/services/c
 /**
  * Several Claude accounts are off on a Windows build until they are ported
  * (their folders' owner-only checks are POSIX modes, and their sign-in starts
- * claude by its bare name). This is the main process's side, the one that starts agents
- * on an account; Settings still shows the switch on Windows at this point.
+ * claude by its bare name). This is the main process's side, the one that
+ * starts agents on an account; Settings still shows the switch on Windows at this point.
  *
  * How it fails, written before the code:
  * 1. On win32 a registry that says on (copied from a Mac, edited by hand, or

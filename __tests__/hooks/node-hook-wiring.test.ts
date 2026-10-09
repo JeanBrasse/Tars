@@ -9,22 +9,22 @@ import { moveTestHome } from '../setup/test-home';
  * Where the hooks are wired: `configureHooks` of the Claude and Gemini
  * providers, and the statusline, which write the CLIs' settings files.
  *
- * On win32 they write `node "<abs>/tars-hook.mjs" <event>` (decision D1). On
+ * On win32 they write `node "<abs>/tars-hook.mjs" <event>`. On
  * darwin and linux they write exactly what they wrote before: the same tests
  * pass against the code before this change, which is the proof.
  *
  * How the wiring can fail, written before the code:
  *  1. win32 keeps writing the bare `.sh` path: bash eats its backslashes, and
- *     no hook ever runs (audit A7).
+ *     no hook ever runs.
  *  2. darwin or linux entries change in any byte (command, timeout, matcher,
  *     order, Gemini's file layout).
  *  3. A second run adds a second entry per event, or the old `.sh` entries a
  *     previous Tars wrote on Windows stay beside the new ones, so each event
  *     runs twice (or runs a dead `.sh` once more).
  *  4. Gemini's probe looks for `gemini/<file>` in a backslash path and appends
- *     a copy of every hook at each start (audit A11); those copies are kept.
+ *     a copy of every hook at each start; those copies are kept.
  *  5. Gemini is wired on `UserPromptSubmit`, which it does not fire;
- *     `BeforeAgent` is its event (audit A12).
+ *     `BeforeAgent` is its event.
  *  6. The agent token cannot reach a Gemini hook once the user turns on
  *     environment redaction (`CLAUDE_MGR_API_TOKEN` matches /TOKEN/): it is
  *     not in `security.environmentVariableRedaction.allowed`; or adding it
@@ -41,15 +41,20 @@ import { moveTestHome } from '../setup/test-home';
  *     would be repointed at the runner and its copies deleted. A .sh is
  *     Tars's only in this app's own hooks folder, or in a hooks folder that
  *     also holds Tars's `tars-hook.sh`/`tars-hook.mjs`, and never under the
- *     CLI's own config folder (win-reviewer, blocker 1).
+ *     CLI's own config folder.
  * 11. PowerShell also ends a string at a typographic quote: U+201C to U+201E
  *     end a double-quoted one, U+2018 to U+201B a single-quoted one. A path
- *     holding them is quoted with the other kind, or refused (review item 3).
+ *     holding them is quoted with the other kind, or refused.
  * 12. Another app's hooks taken for Tars's because they sit in an Electron
  *     install too: the installed Dorothy keeps `.sh` and `.cmd` hooks under
  *     `...\Programs\Dorothy\resources\app.asar.unpacked\hooks\`, with no
- *     tars-hook.sh or tars-hook.mjs. Tars never touches another app's hooks
- *     (orchestrator decision), so `app.asar.unpacked` alone proves nothing.
+ *     tars-hook.sh or tars-hook.mjs. Tars never touches another app's hooks,
+ *     so `app.asar.unpacked` alone proves nothing.
+ * 13. Turning the status line off takes a user's own Node status line for
+ *     Tars's because its file is also called statusline.mjs (under
+ *     `~/.claude/hooks/`, say), and deletes it at every launch while Tars's is
+ *     off. It is Tars's only in this app's hooks folder, or in one that holds
+ *     Tars's runner beside it, and never under a .claude or .gemini folder.
  */
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
@@ -325,7 +330,7 @@ describe('on win32, Gemini runs the Node runner on its own events, with the toke
     expect(s.security.environmentVariableRedaction.enabled).toBeUndefined();
   });
 
-  it('cleans the copies the old probe appended at every start (A11), and the UserPromptSubmit entry', async () => {
+  it('cleans the copies the old probe appended at every start, and the UserPromptSubmit entry', async () => {
     const old = oldCheckout();
     const PACKAGED = packagedTars();
     const sh = (f: string) => (f === 'on-stop.sh' ? path.join(PACKAGED, 'gemini', f) : path.join(old, 'gemini', f));
@@ -499,14 +504,50 @@ describe('the statusline on win32', () => {
 
   it('turns off a Node statusline written from another checkout, and leaves a user one alone', async () => {
     const s = await statusline();
+    // Another Tars: its hooks folder holds the runner beside the status line.
+    const other = oldCheckout();
+    fs.writeFileSync(path.join(other, 'tars-hook.mjs'), '// Tars\n');
+    fs.writeFileSync(path.join(other, 'statusline.mjs'), '// Tars\n');
     fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
-    fs.writeFileSync(claudeSettingsFile(), JSON.stringify({ statusLine: { type: 'command', command: 'node "D:/old/tars/hooks/statusline.mjs"', padding: 1 } }));
+    fs.writeFileSync(claudeSettingsFile(), JSON.stringify({ statusLine: { type: 'command', command: `node "${fwd(path.join(other, 'statusline.mjs'))}"`, padding: 1 } }));
     s.disableStatusLine({ platform: 'win32', hooksDir: HOOKS_DIR });
     expect(read(claudeSettingsFile()).statusLine).toBeUndefined();
 
     fs.writeFileSync(claudeSettingsFile(), JSON.stringify({ statusLine: { type: 'command', command: 'node "C:/me/my-line.mjs"' } }));
     s.disableStatusLine({ platform: 'win32', hooksDir: HOOKS_DIR });
     expect(read(claudeSettingsFile()).statusLine).toEqual({ type: 'command', command: 'node "C:/me/my-line.mjs"' });
+  });
+
+  it.each([
+    ['in ~/.claude/hooks, even beside a copy of the runner', () => {
+      const hooks = path.join(home, '.claude', 'hooks');
+      fs.mkdirSync(hooks, { recursive: true });
+      fs.writeFileSync(path.join(hooks, 'tars-hook.mjs'), '// a copy\n');
+      return path.join(hooks, 'statusline.mjs');
+    }],
+    ['in a .claude folder elsewhere', () => {
+      const hooks = path.join(tmp, 'project', '.claude', 'hooks');
+      fs.mkdirSync(hooks, { recursive: true });
+      fs.writeFileSync(path.join(hooks, 'tars-hook.mjs'), '// a copy\n');
+      return path.join(hooks, 'statusline.mjs');
+    }],
+    ['in a hooks folder of their own, with no Tars runner beside it', () => {
+      const hooks = path.join(fs.mkdtempSync(path.join(tmp, 'mine-')), 'hooks');
+      fs.mkdirSync(hooks, { recursive: true });
+      return path.join(hooks, 'statusline.mjs');
+    }],
+  ])('13. leaves a user\'s own Node status line named statusline.mjs %s', async (_where, place) => {
+    const s = await statusline();
+    const script = place();
+    fs.writeFileSync(script, '// theirs\n');
+    const theirs = { type: 'command', command: `node "${fwd(script)}"`, padding: 0 };
+    fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
+    fs.writeFileSync(claudeSettingsFile(), JSON.stringify({ model: 'opus', statusLine: theirs }));
+
+    s.disableStatusLine({ platform: 'win32', hooksDir: HOOKS_DIR });
+
+    expect(read(claudeSettingsFile())).toEqual({ model: 'opus', statusLine: theirs });
+    expect(fs.existsSync(script)).toBe(true);
   });
 
   it('on darwin still installs statusline.sh and points at it', async () => {

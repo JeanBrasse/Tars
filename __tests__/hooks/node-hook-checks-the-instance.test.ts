@@ -7,13 +7,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
- * The Node hook runner (decision D1) sends its terminal's token only to the
- * Tars that spawned its CLI, as tars-hook.sh does since upstream #212
- * (hook-checks-the-instance.test.ts holds the .sh, which does not ship on
- * Windows). The same check: a fresh random challenge to /api/health, and the
+ * The Node hook runner (what Windows runs for the .sh hooks) sends its
+ * terminal's token on the hook posts only to the Tars that spawned its CLI,
+ * as tars-hook.sh does since upstream #212 (hook-checks-the-instance.test.ts
+ * holds the .sh, which Windows does not wire). The same check: a fresh random challenge to /api/health, and the
  * token only when the answer is sha256("<TARS_INSTANCE_ID>:<challenge>").
  *
- * How it fails, the .sh test's list held against the runner, written before
+ * How it fails, the .sh test's list, asserted here on the runner, written before
  * the runner had the check (2026-09-28):
  * 1. Something other than Tars holds the port and answers /api/health: the
  *    token goes to it anyway.

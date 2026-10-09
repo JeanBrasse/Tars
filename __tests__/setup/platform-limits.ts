@@ -6,17 +6,20 @@
  * and says why, once per file, the first time it does. Each of these still
  * runs on macOS, Linux and CI's ubuntu, where the thing exists.
  *
- * - The `.sh` hooks and the bash status line: Windows ships neither. The
- *   CLIs there run hooks written for Node instead, with tests of their own. A
- *   test whose subject is a `.sh` script run by bash has nothing to run there.
+ * - The `.sh` hooks and the bash status line: a Windows build ships the .sh
+ *   files but wires none of them, and installs no bash status line. The CLIs
+ *   there run hooks/tars-hook.mjs and hooks/statusline.mjs instead, held by
+ *   node-hook-*.test.ts and node-statusline.test.ts. A test whose subject is
+ *   a `.sh` script run by bash has nothing to run there.
  * - POSIX permission bits: Windows has none. chmod sets or clears the
  *   read-only attribute and stat reports 0o666 or 0o444 whatever was asked
  *   (the secret files are closed by an access list there instead). Only the
  *   assertion on the bits is skipped; the rest of its test runs.
  */
 
-export const SH_HOOKS_REASON = 'the .sh hooks and the bash status line do not ship on Windows '
-  + '(the CLIs run hooks written for Node there, with tests of their own); these run on macOS, Linux and CI';
+export const SH_HOOKS_REASON = 'the .sh hooks ship on Windows but nothing runs them, and no bash status line is installed '
+  + '(the CLIs run hooks/tars-hook.mjs and hooks/statusline.mjs there, held by node-hook-*.test.ts and '
+  + 'node-statusline.test.ts); these run on macOS, Linux and CI';
 
 export const POSIX_MODES_REASON = 'Windows has no POSIX permission bits: chmod only sets the read-only '
   + 'attribute and stat reports 0o666 or 0o444; the mode is '

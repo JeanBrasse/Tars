@@ -51,12 +51,12 @@ afterEach(() => {
 
 /**
  * Windows never had those logs, and the product removes nothing there on
- * purpose: no Tars ran the .sh hooks on Windows before they moved (audit A7),
- * and without process.getuid no file passes the owner check (A31), as
+ * purpose: no Tars ran the .sh hooks on Windows before they moved, and
+ * without process.getuid no file passes the owner check, as
  * hooks-manager.ts says.
  */
 const noLegacyLogs = () => skipOnWindows('no Tars ever wrote those /tmp logs on Windows, and removeLegacyHookLogs '
-  + 'removes nothing there by design (audits A7, A31, hooks-manager.ts); the removal runs on macOS, Linux and CI');
+  + 'removes nothing there by design (hooks-manager.ts); the removal runs on macOS, Linux and CI');
 
 describe('the logs the old hooks left in /tmp', () => {
   it.skipIf(noLegacyLogs())('are removed, both of them', () => {

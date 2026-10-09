@@ -7,12 +7,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
- * The Node hook runner (decision D1): `node hooks/tars-hook.mjs <event>` does
- * what `hooks/<event>.sh` does, request for request, byte for byte on stdout.
+ * The Node hook runner, what Windows runs for the .sh hooks:
+ * `node hooks/tars-hook.mjs <event>` does what `hooks/<event>.sh` does,
+ * request for request. Each case states what the .sh sends and prints, read
+ * off the script: every request (method, route, query, Authorization, content
+ * type, and the body as parsed JSON) and stdout byte for byte.
  *
  * On Windows the .sh hooks never ran: bash eats the backslashes of their
  * unquoted path, jq is absent, and Git Bash's curl cannot read the
- * `-H @<(tars_auth)` process substitution (audit A7, A8, A9). The runner uses
+ * `-H @<(tars_auth)` process substitution. The runner uses
  * Node built-ins only, so Windows gets the same hooks Linux and macOS have.
  *
  * How the runner can fail, written before it existed:
@@ -39,12 +42,12 @@ import * as path from 'node:path';
  *     cost a bounded time and still exit 0, as curl --max-time does.
  * 10. A non-zero exit or a crash on bad stdin, where the .sh exits 0.
  * 11. Logs written elsewhere than ~/.dorothy/logs of the HOME it runs in.
- * 12. The Windows bugs kept: a backslash path pasted raw into JSON (A13) or
- *     into a query string (A14).
+ * 12. The Windows bugs kept: a backslash path pasted raw into JSON or into a
+ *     query string.
  * 13. An unknown event swallowed silently instead of failing loudly.
  * 14. A transcript read whole: memory grows with the session, and past
  *     Node's string limit (about 512 MB) the read throws and the output is
- *     lost without a word (win-reviewer, item 2). The runner reads it from
+ *     lost without a word. The runner reads it from
  *     the end, 1 MB at a time, and stops at the last assistant text.
  * 15. That backwards read losing what the .sh finds: a record cut across a
  *     chunk boundary, a multibyte character split in two, a last line still
@@ -57,11 +60,11 @@ import * as path from 'node:path';
  *     server here answers the check for INSTANCE, outside the recorded
  *     requests; node-hook-checks-the-instance.test.ts holds the check itself.
  *
- * Every case below states the requests and stdout the .sh produces (read off
- * the script). Where bash, curl and jq exist (CI on Linux and macOS) the .sh
- * runs too, against the same server, and must produce the same thing. On this
- * Windows machine that half is skipped: `bash` on PATH is the WSL launcher, and
- * Git Bash has no jq and its curl cannot read `-H @<(...)` (audit A8, A9).
+ * Where bash, curl and jq exist (CI on Linux and macOS) the .sh runs too,
+ * against the same server, on every case but the two Windows fixes: the same
+ * requests, compared the same way, and the same stdout as parsed JSON. On
+ * Windows that half is skipped: `bash` on PATH is the WSL launcher, and
+ * Git Bash has no jq and its curl cannot read `-H @<(...)`.
  */
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
@@ -314,7 +317,7 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'SessionStart sends a Windows project path with spaces, & and # intact (A14)',
+    name: 'SessionStart sends a Windows project path with spaces, & and # intact',
     event: 'session-start',
     payload: { session_id: S, cwd: 'C:\\Users\\n\\Claude Project\\a&b #1' },
     env: AGENT,
@@ -324,7 +327,7 @@ const CASES: Case[] = [
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: 'C:\\Users\\n\\Claude Project\\a&b #1' } },
     ],
     stdout: CONTINUE,
-    nodeOnly: 'A14: the .sh pastes the path into the query unencoded, so the server reads project_path=C:\\Users\\n\\Claude Project\\a and loses the rest',
+    nodeOnly: 'the .sh pastes the path into the query unencoded, so the server reads project_path=C:\\Users\\n\\Claude Project\\a and loses the rest',
   },
   {
     name: 'UserPromptSubmit sets running with the first 200 bytes of `echo "$PROMPT"`',
@@ -644,7 +647,7 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'Gemini Notification keeps a Windows project path valid JSON (A13)',
+    name: 'Gemini Notification keeps a Windows project path valid JSON',
     event: 'gemini/notification',
     payload: { session_id: S, message: 'm' },
     env: { ...GEMINI_AGENT, DOROTHY_PROJECT_PATH: 'C:\\Users\\nicol\\new "proj"' },
@@ -652,7 +655,7 @@ const CASES: Case[] = [
       { method: 'POST', path: '/api/hooks/notification', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', session_id: S, message: 'm\n', project_path: 'C:\\Users\\nicol\\new "proj"' } },
     ],
     stdout: CONTINUE,
-    nodeOnly: 'A13: the .sh pastes the path raw into the JSON body, which then does not parse (400)',
+    nodeOnly: 'the .sh pastes the path raw into the JSON body, which then does not parse (400)',
   },
 ];
 

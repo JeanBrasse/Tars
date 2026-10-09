@@ -35,7 +35,7 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 
 const SETTINGS = path.join(tmpHome, '.claude', 'settings.json');
 const OUR_SCRIPT = path.join(tmpData, 'statusline.sh');
-/** What turning it on points the entry at: the script above, or on win32 the Node status line (decision D1). */
+/** What turning it on points the entry at: the script above, or on win32 the Node status line. */
 const OUR_COMMAND = process.platform === 'win32'
   ? `node "${path.join(process.cwd(), 'hooks', 'statusline.mjs').replace(/\\/g, '/')}"`
   : OUR_SCRIPT;

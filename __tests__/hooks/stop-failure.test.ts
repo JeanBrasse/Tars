@@ -458,7 +458,7 @@ describe('the hook reaches every claude-family CLI', () => {
       await provider.configureHooks(HOOKS_DIR);
 
       const settings = JSON.parse(fs.readFileSync(path.join(provider.configDir, 'settings.json'), 'utf-8'));
-      // On win32 the CLI runs the Node runner for the same event (decision D1, hook-command.ts).
+      // On win32 the CLI runs the Node runner for the same event (hook-command.ts).
       const expected = process.platform === 'win32'
         ? nodeHookCommand(path.join(HOOKS_DIR, 'tars-hook.mjs'), 'stop-failure')
         : HOOK;
