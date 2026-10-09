@@ -19,10 +19,14 @@
 
 type ReleaseAsset = { name: string; browser_download_url?: string };
 
+/** The Windows zip, `Tars-Windows-<version>-<arch>.zip` (package.json build.win.artifactName). */
+const WINDOWS_ZIP = /^Tars-Windows-.*\.zip$/i;
+
 /**
  * The asset of a release this platform installs. win32: the setup .exe, this
  * architecture's first, and nothing rather than another platform's file.
- * darwin and linux: the .dmg, then the .zip.
+ * darwin and linux: the .dmg, then the .zip that is not the Windows one, which
+ * is any .zip on a release that has none for Windows, as before.
  */
 export function installerAssetFor<T extends ReleaseAsset>(assets: T[], platform: NodeJS.Platform, arch: string): T | undefined {
   if (platform === 'win32') {
@@ -30,7 +34,7 @@ export function installerAssetFor<T extends ReleaseAsset>(assets: T[], platform:
     return setups.find(a => a.name.toLowerCase().includes(arch.toLowerCase())) ?? setups[0];
   }
   const dmgAsset = assets.find(a => a.name.endsWith('.dmg'));
-  const zipAsset = assets.find(a => a.name.endsWith('.zip'));
+  const zipAsset = assets.find(a => a.name.endsWith('.zip') && !WINDOWS_ZIP.test(a.name));
   return dmgAsset || zipAsset;
 }
 

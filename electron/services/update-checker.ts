@@ -83,11 +83,15 @@ async function checkGitHubRelease(mainWindow: BrowserWindow | null) {
     installer = installerAssetFor<{ name: string; browser_download_url?: string }>(data.assets, process.platform, process.arch);
     downloadUrl = installer?.browser_download_url || '';
   }
-  if (!offersUpdate(process.platform, installer)) hasUpdate = false;
+  // A release this platform cannot install yet is no update, and the latest
+  // version it can get is then the one it runs.
+  const offered = offersUpdate(process.platform, installer);
+  if (!offered) hasUpdate = false;
+  const latestForThisPlatform = offered ? latestVersion : currentVersion;
 
   const info = {
     currentVersion,
-    latestVersion,
+    latestVersion: latestForThisPlatform,
     downloadUrl: downloadUrl || data.html_url || '',
     releaseUrl: data.html_url || '',
     releaseNotes: data.body || '',
@@ -99,7 +103,7 @@ async function checkGitHubRelease(mainWindow: BrowserWindow | null) {
   } else {
     mainWindow?.webContents.send('app:update-not-available', {
       currentVersion,
-      latestVersion,
+      latestVersion: latestForThisPlatform,
     });
   }
 
