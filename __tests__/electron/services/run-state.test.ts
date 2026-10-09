@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { RUN_STATE_FILE, beginRun, endRun, isWorking, recordResumed, recordRun } from '../../../electron/services/run-state';
 import { PRIVATE_DIR } from '../../../electron/constants';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * Whether the last run of Tars ended abruptly, and who was working when it did (RD-REDEMARRAGE.md, 2.2; Noah's yes
@@ -43,7 +44,7 @@ describe('the run record', () => {
   it('7. lives in ~/.tars-private, which no agent is handed, readable by its owner alone', () => {
     expect(RUN_STATE_FILE).toBe(path.join(PRIVATE_DIR, 'run-state.json'));
     beginRun(opts());
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('1. a clean quit is not a crash, and a run that never ended is one, with when it was last heard of', () => {

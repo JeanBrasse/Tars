@@ -26,8 +26,8 @@ import * as fs from 'node:fs';
  */
 
 const { TMP_DATA_DIR } = vi.hoisted(() => {
-  const base = (process.env.TMPDIR || '/tmp').replace(/\/$/, '');
-  return { TMP_DATA_DIR: `${base}/tars-hermes-errors-${process.pid}-${Date.now()}` };
+  const base = process.getBuiltinModule('node:os').tmpdir();
+  return { TMP_DATA_DIR: process.getBuiltinModule('node:path').join(base, `tars-hermes-errors-${process.pid}-${Date.now()}`) };
 });
 vi.mock('../../../electron/constants', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../electron/constants')>()),

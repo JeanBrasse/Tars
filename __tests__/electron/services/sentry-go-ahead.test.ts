@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { FakeHermes } from '../../fixtures/fake-hermes';
 import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 const electronApp = vi.hoisted(() => ({ isPackaged: false, getVersion: () => '1.9.2', isReady: () => false, getPath: () => '/tmp' }));
 vi.mock('electron', () => ({ app: electronApp }));
@@ -405,7 +406,7 @@ describe('what is kept', () => {
     await triage.triageOnce(deps());
 
     const file = path.join(os.homedir(), '.tars-private', 'sentry-go-aheads.json');
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(JSON.parse(fs.readFileSync(file, 'utf-8')).issues['4001']).toMatchObject({ task: taskOf().id, name: 'TARS-1', state: 'asking' });
     expect(fs.existsSync(path.join(os.homedir(), '.dorothy', 'sentry-go-aheads.json'))).toBe(false);
   });

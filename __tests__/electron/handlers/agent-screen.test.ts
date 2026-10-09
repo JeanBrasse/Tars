@@ -17,7 +17,7 @@ import { createRequire } from 'node:module';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-agent-screen-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-agent-screen-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = {

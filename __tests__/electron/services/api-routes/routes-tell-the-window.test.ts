@@ -99,11 +99,12 @@ import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 import type { AgentTickItem } from '../../../../electron/utils/agents-tick';
+import { moveTestHome } from '../../../setup/test-home';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-routes-window-home-'));
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-routes-window-project-'));
 
-let savedHome: string | undefined;
+let restoreHome: () => void;
 let routes: RouteApp;
 let ctx: RouteContext;
 
@@ -115,8 +116,7 @@ beforeEach(() => {
   ptyProcesses.clear();
   vi.mocked(writeProgrammaticInput).mockClear();
   // Starting a session pre-accepts workspace trust in ~/.claude.json.
-  savedHome = process.env.HOME;
-  process.env.HOME = home;
+  restoreHome = moveTestHome(home);
   expect(os.homedir(), 'HOME is not redirected, and a spawn would write the real ~/.claude.json').toBe(home);
 
   routes = {
@@ -152,7 +152,7 @@ afterEach(async () => {
   expect(vi.getTimerCount()).toBe(0);
   vi.useRealTimers();
   stopAgentWatch();
-  process.env.HOME = savedHome;
+  restoreHome();
 });
 
 /** Calls a route the way the server does, and returns what it answered. */
@@ -339,3 +339,13 @@ describe('an agent changed over the API', () => {
     expect(await cardOf('a2')).toBeDefined();
   });
 });
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux, once the home above
+// has moved as the host names it; the win32 launch (the CLI as the terminal's
+// process) is held by launch-call-sites.test.ts and agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeEach(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterEach(() => { Object.defineProperty(process, 'platform', hostPlatform); });

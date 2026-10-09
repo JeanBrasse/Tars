@@ -121,10 +121,73 @@ if (cmd === 'api') {
 fail('fake gh: not a call these scripts may make here: ' + args.join(' '), 99);
 `;
 
+/**
+ * Windows: execFile('gh') runs gh.com or gh.exe, never a file named `gh`, so a
+ * script with a shebang is invisible there and the real gh.exe answered in the
+ * fake's place. The fake is node itself under the name gh.exe (a hard link, so
+ * no copy), and NODE_OPTIONS preloads the script below into it. Node takes gh's
+ * first argument for a script path and resolves it against the cwd before the
+ * preload runs; the preload gives it back as gh received it. Every other node
+ * the tests start loads the preload too and returns at once.
+ */
+const WINDOWS_PRELOAD = `
+const { basename, relative } = require('path');
+if (basename(process.execPath).toLowerCase() === 'gh.exe') {
+  const first = process.argv[1];
+  const asGiven = first === undefined ? [] : [first.startsWith('-') ? first : relative(process.cwd(), first)];
+  process.argv = [process.execPath, __filename, ...asGiven, ...process.argv.slice(2)];
+  (function () {
+${SCRIPT}
+  })();
+}
+`;
+
+function isFile(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The gh that execFile('gh') would run from this process with this PATH, or
+ * undefined for none. libuv's search on Windows: the cwd, then each PATH entry,
+ * trying gh.com and then gh.exe. execvp's elsewhere: the first executable `gh`
+ * on the PATH.
+ */
+function resolveGh(searchPath: string): string | undefined {
+  const dirs = searchPath.split(path.delimiter).filter(Boolean);
+  if (process.platform === 'win32') {
+    for (const dir of [process.cwd(), ...dirs]) {
+      for (const ext of ['.com', '.exe']) {
+        const candidate = path.join(dir, `gh${ext}`);
+        if (isFile(candidate)) return candidate;
+      }
+    }
+    return undefined;
+  }
+  for (const dir of dirs) {
+    const candidate = path.join(dir, 'gh');
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      if (isFile(candidate)) return candidate;
+    } catch {
+      // Not there, or not executable: execvp goes on to the next entry too.
+    }
+  }
+  return undefined;
+}
+
 export type FakeGh = {
-  /** Put the fake first on the PATH for everything this process starts. */
+  /** The folder the fake gh lives in, put first on the PATH by install(). */
+  readonly bin: string;
+  /**
+   * Put the fake first on the PATH for everything this process starts. Throws,
+   * and changes nothing, when the gh that PATH would run is not this fake.
+   */
   install(): void;
-  /** Put the PATH back as it was. */
+  /** Put the PATH back as it was, and remove the fake's folder: read state() and calls() before. */
   uninstall(): void;
   setState(state: FakeGhState): void;
   /** What the fake GitHub holds now, with what `release create` added to it. */
@@ -139,8 +202,20 @@ export function fakeGh(state: FakeGhState = {}): FakeGh {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-fake-gh-'));
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin);
-  const gh = path.join(bin, 'gh');
-  fs.writeFileSync(gh, `#!${process.execPath}\n${SCRIPT}`, { mode: 0o755 });
+  const onWindows = process.platform === 'win32';
+  const gh = path.join(bin, onWindows ? 'gh.exe' : 'gh');
+  const preload = path.join(dir, 'gh-preload.cjs');
+  if (onWindows) {
+    try {
+      fs.linkSync(process.execPath, gh);
+    } catch {
+      // Another volume, or a file system without hard links.
+      fs.copyFileSync(process.execPath, gh);
+    }
+    fs.writeFileSync(preload, WINDOWS_PRELOAD);
+  } else {
+    fs.writeFileSync(gh, `#!${process.execPath}\n${SCRIPT}`, { mode: 0o755 });
+  }
   const stateFile = path.join(dir, 'state.json');
   const logFile = path.join(dir, 'calls.log');
   fs.writeFileSync(stateFile, JSON.stringify(state));
@@ -148,9 +223,24 @@ export function fakeGh(state: FakeGhState = {}): FakeGh {
 
   const saved: Record<string, string | undefined> = {};
   return {
+    bin,
     install() {
-      for (const key of ['PATH', 'FAKE_GH_STATE', 'FAKE_GH_LOG', 'GH_CONFIG_DIR', 'GH_TOKEN', 'GITHUB_TOKEN']) saved[key] = process.env[key];
-      process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
+      const searchPath = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
+      const found = resolveGh(searchPath);
+      const same = (a: string, b: string) => (onWindows ? a.toLowerCase() === b.toLowerCase() : a === b);
+      if (found === undefined || !same(path.resolve(found), path.resolve(gh))) {
+        throw new Error(`fake gh: the gh this PATH runs is ${found ?? 'none'}, which is not the fake ${gh}. `
+          + 'Refused before any script could run it.');
+      }
+      const keys = ['PATH', 'FAKE_GH_STATE', 'FAKE_GH_LOG', 'GH_CONFIG_DIR', 'GH_TOKEN', 'GITHUB_TOKEN'];
+      if (onWindows) keys.push('NODE_OPTIONS');
+      for (const key of keys) saved[key] = process.env[key];
+      process.env.PATH = searchPath;
+      if (onWindows) {
+        // Forward slashes: NODE_OPTIONS reads a backslash inside quotes as an escape.
+        const option = `--require "${preload.replace(/\\/g, '/')}"`;
+        process.env.NODE_OPTIONS = process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ${option}` : option;
+      }
       process.env.FAKE_GH_STATE = stateFile;
       process.env.FAKE_GH_LOG = logFile;
       // Should a real gh ever run in its place, it finds no account to act as:
@@ -164,6 +254,11 @@ export function fakeGh(state: FakeGhState = {}): FakeGh {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+      // The fake's folder with it (on Windows, a hard link or a copy of node):
+      // nothing a test made is left in the temp dir. Windows may still hold
+      // gh.exe a moment after the last run of it has exited: EBUSY on CI's
+      // windows-latest. Linear backoff, 11 s at most.
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     },
     setState(next) {
       fs.writeFileSync(stateFile, JSON.stringify(next));

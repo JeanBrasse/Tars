@@ -116,6 +116,68 @@ describe('pruning old builds', () => {
   });
 });
 
+/**
+ * The gh these scripts run is the fake, and never the one on the machine.
+ *
+ * Measured on Windows on 2026-09-25: execFile('gh') looks for gh.com and gh.exe
+ * only, so the fake, a file named `gh`, was never found and the real gh.exe ran
+ * in its place, 38 tests, with the user's GitHub session when APPDATA was not
+ * isolated. The fake records the argv of every call it answers, which is the
+ * proof it was the one reached; and a fake the PATH would not find is refused
+ * before any script can run the gh behind it.
+ */
+describe('the gh the scripts run', () => {
+  it('is the fake, for the script run as its own process', () => {
+    const versions = ['1.6.1', '1.6.2', '1.6.3', '1.6.4'];
+    const { dir } = checkoutWith(versions);
+    gh.setState(allPublished(versions));
+
+    execFileSync(process.execPath, [script, '--release-dir', 'release'], { cwd: dir, stdio: 'pipe' });
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    // Asked of the two older than the two it keeps (1.9.3), newest first.
+    expect(gh.calls()).toEqual([
+      ['release', 'view', 'v1.6.2', '--repo', 'acme/tars', '--json', 'assets'],
+      ['release', 'view', 'v1.6.1', '--repo', 'acme/tars', '--json', 'assets'],
+    ]);
+  });
+
+  it('is the fake, for the script run inside this process', async () => {
+    const versions = ['1.6.1', '1.6.2', '1.6.3', '1.6.4'];
+    const { release } = checkoutWith(versions);
+    gh.setState(allPublished(versions));
+
+    await main(['--release-dir', release], { cwd: path.dirname(release), log: () => {} });
+
+    // Asked of the two older than the two it keeps (1.9.3), newest first.
+    expect(gh.calls()).toEqual([
+      ['release', 'view', 'v1.6.2', '--repo', 'acme/tars', '--json', 'assets'],
+      ['release', 'view', 'v1.6.1', '--repo', 'acme/tars', '--json', 'assets'],
+    ]);
+  });
+
+  it('is refused at install when the fake is missing, rather than left to the gh on the PATH', () => {
+    // The PATH as the run found it: the real gh, on a machine that has one.
+    gh.uninstall();
+    const missing = fakeGh();
+    fs.rmSync(missing.bin, { recursive: true, force: true });
+    const before = process.env.PATH;
+
+    expect(() => missing.install()).toThrow(/is not the fake/);
+    expect(process.env.PATH).toBe(before);
+    missing.uninstall();
+  });
+
+  it('leaves no folder behind in the temp dir once uninstalled', () => {
+    const other = fakeGh();
+    const folder = path.dirname(other.bin);
+    other.install();
+    other.uninstall();
+
+    expect(fs.existsSync(folder), folder).toBe(false);
+  });
+});
+
 describe('what the purge may delete', () => {
   const FIVE = ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4'];
   const NEWEST = ['1.0.3', '1.0.4'];

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { writeFileSync as namedWriteFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { withTestHome } from './test-home';
 
 /**
  * The witness for __tests__/setup/home-isolation.ts.
@@ -32,6 +33,7 @@ import { ensureProjectTrusted } from '../../electron/core/agent-manager';
 
 type HomeGuard = {
   originalHome: string | undefined;
+  originalProfile: Record<string, string | undefined>;
   accountHome: string;
   throwawayHome: string;
   protectedRoots: string[];
@@ -96,15 +98,73 @@ describe('the suite runs in a HOME of its own', () => {
     expect(guard.protectedRoots).toContain(fs.realpathSync.native(guard.originalHome as string));
     if (guard.accountHome) expect(guard.protectedRoots).toContain(fs.realpathSync.native(guard.accountHome));
     // And lets nothing under them through but the repository, the throwaway
-    // HOME and the temporary folder, which on Windows lies inside the account's
-    // home (AppData\Local\Temp). The tests here never write into the real home,
-    // so a guard that let that home through would pass all of them: this is
-    // what fails instead.
+    // HOME and the run's temporary folder, which holds this file's
+    // (tmpdir-isolation.ts) and which on Windows lies inside the account's home
+    // (AppData\Local\Temp). The tests here never write into the real home, so
+    // a guard that let that home through would pass all of them: this is what
+    // fails instead.
     expect(guard.allowedRoots).toEqual([
       fs.realpathSync.native(process.cwd()),
       fs.realpathSync.native(guard.throwawayHome),
-      fs.realpathSync.native(os.tmpdir()),
+      fs.realpathSync.native(path.dirname(os.tmpdir())),
     ]);
+  });
+
+  it.runIf(process.platform === 'win32')('on Windows, points USERPROFILE, APPDATA and LOCALAPPDATA at it too', () => {
+    // os.homedir() reads USERPROFILE on Windows, not HOME: redirecting HOME
+    // alone left DATA_DIR on the real %USERPROFILE%\.dorothy.
+    const home = guard.throwawayHome;
+    expect(os.homedir()).toBe(home);
+    expect(process.env.USERPROFILE).toBe(home);
+    expect(process.env.APPDATA).toBe(path.join(home, 'AppData', 'Roaming'));
+    expect(process.env.LOCALAPPDATA).toBe(path.join(home, 'AppData', 'Local'));
+    expect(`${process.env.HOMEDRIVE}${process.env.HOMEPATH}`).toBe(home);
+    expect(fs.statSync(process.env.APPDATA as string).isDirectory()).toBe(true);
+    expect(fs.statSync(process.env.LOCALAPPDATA as string).isDirectory()).toBe(true);
+    // And the folders the run started with stay protected, whatever they were.
+    for (const key of ['USERPROFILE', 'APPDATA', 'LOCALAPPDATA']) {
+      const was = guard.originalProfile[key];
+      if (was) expect(guard.protectedRoots, key).toContain(fs.realpathSync.native(was));
+    }
+  });
+
+  it('lets a test write into the temp dir, even where it lies under the account home', () => {
+    try {
+      const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-home-isolation-temp-'));
+      fs.writeFileSync(path.join(scratch, 'ok'), 'ok');
+      fs.rmSync(scratch, { recursive: true, force: true });
+    } finally {
+      expect(guard.violations.splice(0)).toEqual([]);
+    }
+  });
+
+  it('still refuses a write into the real ~/.dorothy, and the real app data folder', () => {
+    // Into a folder that does not exist, so that a guard that let it through
+    // fails with ENOENT and writes nothing: the witness cannot become the leak.
+    const probe = `tars-guard-probe-${process.pid}-${Date.now()}`;
+    const targets = [path.join(guard.accountHome, '.dorothy', probe, 'agents.json')];
+    if (process.platform === 'win32') {
+      // Electron's userData is %APPDATA%\tars: the real one, and the one the run started with.
+      targets.push(path.join(guard.accountHome, 'AppData', 'Roaming', 'tars', probe, 'config.json'));
+      const appData = guard.originalProfile.APPDATA;
+      if (appData) targets.push(path.join(appData, 'tars', probe, 'config.json'));
+    }
+    expect(guard.accountHome, 'no account home to protect on this machine').toBeTruthy();
+    let refused: string[] = [];
+    try {
+      for (const target of targets) {
+        let thrown: unknown;
+        try {
+          fs.writeFileSync(target, 'x');
+        } catch (error) {
+          thrown = error;
+        }
+        expect((thrown as NodeJS.ErrnoException | undefined)?.code, target).toBe('E_TARS_HOME_GUARD');
+      }
+    } finally {
+      refused = guard.violations.splice(0).map(v => v.path);
+    }
+    expect(refused).toHaveLength(targets.length);
   });
 
   it('sends the trust write that leaked into ~/.claude.json to the throwaway HOME', () => {
@@ -130,7 +190,6 @@ describe('the suite runs in a HOME of its own', () => {
 describe('a write into a protected home', () => {
   let protectedHome: string;
   let outside: string;
-  let homeBefore: string | undefined;
 
   beforeEach(() => {
     protectedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-home-isolation-protected-'));
@@ -138,19 +197,16 @@ describe('a write into a protected home', () => {
     outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-home-isolation-outside-'));
     fs.writeFileSync(path.join(outside, 'source'), 'source');
     guard.protect(protectedHome);
-    homeBefore = process.env.HOME;
   });
 
   afterEach(() => {
-    process.env.HOME = homeBefore;
     guard.unprotect(protectedHome);
     fs.rmSync(protectedHome, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
   it('is refused on the product path that leaked, and recorded although the product swallows it', () => {
-    process.env.HOME = protectedHome;
-    ensureProjectTrusted(project());
+    withTestHome(protectedHome, () => ensureProjectTrusted(project()));
 
     expect(fs.existsSync(path.join(protectedHome, '.claude.json'))).toBe(false);
     // Consumed here, because the setup file fails the whole file on any record
@@ -170,7 +226,9 @@ describe('a write into a protected home', () => {
     try {
       inRepository(scratch => {
         const link = path.join(scratch, 'linked');
-        fs.symlinkSync(protectedHome, link);
+        // A junction on Windows, which is what a worktree's node_modules link is
+        // there and needs no privilege; the type is ignored everywhere else.
+        fs.symlinkSync(protectedHome, link, 'junction');
         let thrown: unknown;
         try {
           fs.writeFileSync(path.join(link, 'through-the-link'), 'x');
@@ -190,6 +248,29 @@ describe('a write into a protected home', () => {
     expect(refused).toEqual([
       ['fs.writeFileSync', path.join(fs.realpathSync.native(protectedHome), 'through-the-link')],
     ]);
+    expect(fs.readdirSync(protectedHome)).toEqual(['existing']);
+  });
+
+  it.runIf(process.platform === 'win32')('is refused through a pipe prefix that climbs back out of the pipe namespace', () => {
+    // The guard lets genuine named pipes through (node-pty's ConPTY input), and
+    // Windows collapses `..` in them: each of these opens an ordinary file in
+    // the protected home. Found at review on 2026-09-25.
+    const escapes = ['\\\\.\\pipe\\..\\', '//./pipe/../', '\\\\?\\pipe\\..\\'];
+    let refused: string[] = [];
+    try {
+      escapes.forEach((prefix, i) => {
+        let thrown: unknown;
+        try {
+          fs.writeFileSync(`${prefix}${path.join(protectedHome, `escape-${i}`)}`, 'x');
+        } catch (error) {
+          thrown = error;
+        }
+        expect((thrown as NodeJS.ErrnoException | undefined)?.code, prefix).toBe('E_TARS_HOME_GUARD');
+      });
+    } finally {
+      refused = guard.violations.splice(0).map(v => v.path);
+    }
+    expect(refused).toHaveLength(escapes.length);
     expect(fs.readdirSync(protectedHome)).toEqual(['existing']);
   });
 

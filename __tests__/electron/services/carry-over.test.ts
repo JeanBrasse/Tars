@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * What Tars owes its agents, carried across a restart (RD-REDEMARRAGE.md, 2.3; Noah's yes of 2026-10-05). The note
@@ -176,7 +177,7 @@ describe('the file', () => {
     const constants = await import('../../../electron/constants');
     expect(carry.CARRY_OVER_FILE).toBe(path.join(constants.PRIVATE_DIR, 'carry-over.json'));
     writer.flush();
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('20. a note is taken back only as Tars writes one: a known kind and status, a reason of minutes, background ids', () => {

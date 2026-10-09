@@ -22,7 +22,7 @@ vi.mock('uuid', () => ({
 // The handler module resolves DATA_DIR at import time, so the mocked path
 // must be a stable constant (vi.hoisted runs before the static imports).
 const h = vi.hoisted(() => ({
-  tmpDir: `${process.env.TMPDIR || '/tmp'}/dorothy-team-test-${process.pid}`,
+  tmpDir: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `dorothy-team-test-${process.pid}`),
 }));
 vi.mock('../../../electron/constants', () => ({
   DATA_DIR: h.tmpDir,

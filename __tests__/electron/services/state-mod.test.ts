@@ -32,6 +32,7 @@ import * as path from 'path';
 import {
   MOD_MIN_CLAUDE, stateModEnv, launchedClaudeVersion, versionAtLeast, noteModSession, modRunsSession, noteModBeat, modBeatFor, resetStateMod,
 } from '../../../electron/services/state-mod';
+import { cannotPlantPosixInstall } from '../../setup/posix-install-layout';
 
 let dir: string;
 beforeEach(() => {
@@ -104,7 +105,11 @@ describe('which sessions run the mod', () => {
 });
 
 describe('the claude a launch runs (6)', () => {
-  /** A native install as the installer lays it out: ~/.local/share/claude/versions/<v>, linked from bin/claude. */
+  /**
+   * A native install as the installer lays it out on macOS and Linux: ~/.local/share/claude/versions/<v>, linked from
+   * bin/claude. Windows has no such link (posix-install-layout.ts): claude.exe is a copy there, read by
+   * cli-updater-windows.ts and held by cli-updater-windows.test.ts.
+   */
   function nativeInstall(version: string, name = 'claude'): string {
     const versions = path.join(dir, `share-${version}`, 'claude', 'versions');
     fs.mkdirSync(versions, { recursive: true });
@@ -115,12 +120,12 @@ describe('the claude a launch runs (6)', () => {
     return bin;
   }
 
-  it('reads the version of the claude on the launch\'s PATH', () => {
+  it.skipIf(cannotPlantPosixInstall())('reads the version of the claude on the launch\'s PATH', () => {
     const bin = nativeInstall('2.1.300');
     expect(launchedClaudeVersion({ settingsPath: undefined, envPath: `/nowhere${path.delimiter}${bin}` })).toBe('2.1.300');
   });
 
-  it('reads the one Settings names before the one on PATH', () => {
+  it.skipIf(cannotPlantPosixInstall())('reads the one Settings names before the one on PATH', () => {
     const old = nativeInstall('2.1.200');
     const named = path.join(nativeInstall('2.1.301'), 'claude');
     expect(launchedClaudeVersion({ settingsPath: named, envPath: old })).toBe('2.1.301');

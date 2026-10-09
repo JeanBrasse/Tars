@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { moveTestHome } from '../setup/test-home';
 
 /**
  * mcp-vault presents the agent's own token when it has one.
@@ -36,17 +37,19 @@ vi.mock('http', async (importOriginal) => {
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vault-token-'));
 let saved: Record<string, string | undefined>;
+let restoreHome: () => void;
 
 beforeEach(() => {
   sent.length = 0;
-  saved = { HOME: process.env.HOME, CLAUDE_MGR_API_TOKEN: process.env.CLAUDE_MGR_API_TOKEN, CLAUDE_MGR_API_URL: process.env.CLAUDE_MGR_API_URL };
+  saved = { CLAUDE_MGR_API_TOKEN: process.env.CLAUDE_MGR_API_TOKEN, CLAUDE_MGR_API_URL: process.env.CLAUDE_MGR_API_URL };
   // The shared file an agent without a token of its own falls back to.
   fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
   fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'the-shared-token-from-the-file');
-  process.env.HOME = home;
+  restoreHome = moveTestHome(home);
 });
 
 afterEach(() => {
+  restoreHome();
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;

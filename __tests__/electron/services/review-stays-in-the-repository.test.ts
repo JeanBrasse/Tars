@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { reviewDiff, fileDiff, resetReviewCache } from '../../../electron/services/git-review';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * The Review page reads what is in the repository, and says when a patch was cut.
@@ -46,8 +47,11 @@ beforeAll(() => {
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'base');
   fs.writeFileSync(path.join(repo, 'inside.txt'), 'inside\n');
-  fs.symlinkSync('../secret-outside.txt', path.join(repo, 'link-out'));
-  fs.symlinkSync('../outside-dir', path.join(repo, 'dir-out'));
+  // Only where this account may make a link (symlink-privilege.ts): 3 and 4 need them, the rest runs everywhere.
+  if (!cannotSymlink()) {
+    fs.symlinkSync('../secret-outside.txt', path.join(repo, 'link-out'));
+    fs.symlinkSync('../outside-dir', path.join(repo, 'dir-out'));
+  }
 
   fs.mkdirSync(big);
   git(big, 'init', '-q', '-b', 'main');
@@ -57,8 +61,13 @@ beforeAll(() => {
   fs.writeFileSync(path.join(big, 'big.txt'), Array.from({ length: BIG_LINES }, (_, i) => `line ${String(i).padStart(24, '0')}`).join('\n') + '\n');
 });
 
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
+afterAll(async () => {
+  // Retried, and not synchronously: a patch past the cut ends git at
+  // maxBuffer, and execFile answers without waiting for git to exit. On
+  // Windows the folder git works in cannot be removed until it has, and rmSync
+  // does not retry that refusal at all (EBUSY on the folder's first rmdir);
+  // fs.promises.rm retries the whole removal, here for at most 5.5 s.
+  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 beforeEach(() => {
@@ -83,16 +92,18 @@ describe('review:file reads the repository and nothing else', () => {
     }
   });
 
-  it('3. a link that points out is shown as the link it is: its target path, never what it points to', async () => {
+  it.skipIf(cannotSymlink())('3. a link that points out is shown as the link it is: its target path, never what it points to', async () => {
     const shown = await fileDiff(repo, 'link-out');
 
-    expect(shown).toContain('+../secret-outside.txt');
+    // The target as the link holds it: Node writes a Windows link's target
+    // with backslashes (Windows links take no forward slash), and git shows it so.
+    expect(shown).toContain(process.platform === 'win32' ? '+..\\secret-outside.txt' : '+../secret-outside.txt');
     expect(shown).not.toContain('SECRET OUTSIDE');
     const listed = (await reviewDiff(repo)).files.find((f) => f.path === 'link-out');
     expect(listed, 'the link is listed').toMatchObject({ status: 'untracked', additions: 1 });
   });
 
-  it('4. a file reached through a linked folder that points out is refused', async () => {
+  it.skipIf(cannotSymlink())('4. a file reached through a linked folder that points out is refused', async () => {
     const shown = await fileDiff(repo, 'dir-out/secret.txt').catch((e: Error) => `refused: ${e.message}`);
 
     expect(shown).toMatch(/^refused: /);

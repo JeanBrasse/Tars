@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 
 /**
  * `npm run lint:design`, run on throwaway trees laid out like src/ and never on
@@ -13,12 +13,18 @@ import { execFile } from 'node:child_process';
  * red, the files whose job is raw appearance must not, and every way grep can
  * fail to search must turn it red too. Reading that as "nothing found" is how
  * this script printed five green ticks over a src/ that did not exist.
+ *
+ * The lint is scripts/design-lint.mjs, the Node port of the grep script it
+ * replaced, run by the node running these tests: the same checks, lines and
+ * exit codes, on every platform, with no bash or grep to find.
  */
 
-const SCRIPT = path.join(__dirname, '../../scripts/design-lint.sh');
+const SCRIPT = path.join(__dirname, '../../scripts/design-lint.mjs');
 const made: string[] = [];
+const locked: string[] = [];
 
 afterAll(() => {
+  for (const file of locked) execFileSync('icacls', [file, '/remove:d', EVERYONE], { stdio: 'ignore' });
   for (const dir of made) {
     fs.chmodSync(dir, 0o755);
     fs.rmSync(dir, { recursive: true, force: true });
@@ -28,6 +34,25 @@ afterAll(() => {
 function write(root: string, file: string, content: string | Buffer) {
   fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
   fs.writeFileSync(path.join(root, file), content);
+}
+
+/** The well-known SID of Everyone, which holds this process's own account. */
+const EVERYONE = '*S-1-1-0';
+
+/**
+ * Makes `file` impossible to open for reading: mode 000 on POSIX, and on
+ * Windows, where chmod only sets the read-only flag, a deny-read-data entry for
+ * Everyone. afterAll lifts it before the tree is removed.
+ */
+function lockAgainstReading(file: string) {
+  if (process.platform === 'win32') {
+    execFileSync('icacls', [file, '/deny', `${EVERYONE}:(RD)`], { stdio: 'ignore' });
+    locked.push(file);
+  } else {
+    fs.chmodSync(file, 0o000);
+  }
+  // The witness: a lock that does not lock would let this case pass for the wrong reason.
+  expect(() => fs.readFileSync(file)).toThrow();
 }
 
 /** One line per rule, as text: grep reads characters, not syntax. */
@@ -68,7 +93,7 @@ function cleanTree(): string {
 /** The lint, run from `root` as `npm run lint:design` runs it from the repository. */
 function lint(root: string, script = SCRIPT): Promise<{ status: number | null; output: string }> {
   return new Promise(resolve => {
-    execFile('bash', [script], { cwd: root, encoding: 'utf8' }, (error, stdout, stderr) => {
+    execFile(process.execPath, [script], { cwd: root, encoding: 'utf8' }, (error, stdout, stderr) => {
       const status = error ? (typeof error.code === 'number' ? error.code : null) : 0;
       resolve({ status, output: `${stdout}${stderr}` });
     });
@@ -79,7 +104,7 @@ function lint(root: string, script = SCRIPT): Promise<{ status: number | null; o
 function editedScript(root: string, from: string, to: string): string {
   const source = fs.readFileSync(SCRIPT, 'utf8');
   expect(source.split(from)).toHaveLength(2);
-  const copy = path.join(root, 'design-lint.edited.sh');
+  const copy = path.join(root, 'design-lint.edited.mjs');
   fs.writeFileSync(copy, source.replace(from, to));
   return copy;
 }
@@ -238,7 +263,7 @@ describe.concurrent('a lint that could not search', () => {
   it.skipIf(process.getuid?.() === 0)('fails when grep cannot open a file, even one holding the only violation', async ({ expect }) => {
     const root = cleanTree();
     write(root, 'src/components/Locked.tsx', 'export const Locked = () => <div className="shadow-lg" />;\n');
-    fs.chmodSync(path.join(root, 'src/components/Locked.tsx'), 0o000);
+    lockAgainstReading(path.join(root, 'src/components/Locked.tsx'));
 
     const run = await lint(root);
 
@@ -249,7 +274,7 @@ describe.concurrent('a lint that could not search', () => {
 
   it('fails when a rule is a pattern grep cannot parse', async ({ expect }) => {
     const root = cleanTree();
-    const script = editedScript(root, '"shadow-(sm|md|lg|xl|2xl)"', '"shadow-(sm|md|lg|xl|2xl"');
+    const script = editedScript(root, 'String.raw`shadow-(sm|md|lg|xl|2xl)`', 'String.raw`shadow-(sm|md|lg|xl|2xl`');
 
     const run = await lint(root, script);
 
@@ -261,7 +286,7 @@ describe.concurrent('a lint that could not search', () => {
     // Only lines found reach the exemptions, so something has to be found.
     const root = cleanTree();
     write(root, 'src/lib/planted.ts', "export const c = 'animate-ping';\n");
-    const script = editedScript(root, "exempt='^src/components/ui/'", "exempt='^src/components/(ui/'");
+    const script = editedScript(root, 'String.raw`^src/components/ui/`', 'String.raw`^src/components/(ui/`');
 
     const run = await lint(root, script);
 

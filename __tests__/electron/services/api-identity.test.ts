@@ -67,6 +67,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 import type { AgentStatus, BusMessage } from '../../../electron/types';
+import { moveTestHome } from '../../setup/test-home';
 
 // Imported once the constants above exist: the mock factory reads them, and a
 // static import would run it first. Held from here on, so that the modules the
@@ -379,13 +380,18 @@ describe('the MCP servers that call the API', () => {
    * the file would have nothing to present, rather than presenting the real
    * one of whoever runs the suite.
    */
+  let restoreHome: (() => void) | undefined;
   function asAgent(env: Record<string, string>): void {
     saved = Object.fromEntries(KEYS.map(k => [k, process.env[k]]));
     for (const k of KEYS) delete process.env[k];
-    Object.assign(process.env, { HOME: home, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, ...env });
+    const { HOME: agentHome = home, ...rest } = env;
+    Object.assign(process.env, { CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, ...rest });
+    restoreHome = moveTestHome(agentHome);
   }
 
   afterEach(() => {
+    restoreHome?.();
+    restoreHome = undefined;
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
