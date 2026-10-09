@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -50,6 +50,17 @@ import {
 } from '../../../../electron/core/pty-manager';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
 
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-dispatch-draft-'));
 

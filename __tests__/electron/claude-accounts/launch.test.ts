@@ -28,6 +28,7 @@
  *   without saying from where, so the card and the move event cannot tell.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -74,19 +75,19 @@ beforeEach(() => {
 
 const ctx = (over: Record<string, unknown> = {}) => ({ agents: [] as AgentStatus[], cwd: project, now: NOW, settings: settings(), usage: {}, overrides: [] as string[], ...over });
 
-describe('with the option off', () => {
+describe.skipIf(claudeAccountsNotPorted())('with the option off', () => {
   it('gives nothing, so the launch is what it was', () => {
     expect(claudeAccountEnvFor(agent(), ctx({ settings: settings({ enabled: false }) }))).toBeNull();
   });
 });
 
-describe('other providers', () => {
+describe.skipIf(claudeAccountsNotPorted())('other providers', () => {
   it.each(['openrouter', 'deepseek', 'local', 'codex', 'gemini'])('gives %s nothing', (provider) => {
     expect(claudeAccountEnvFor(agent({ provider: provider as never }), ctx())).toBeNull();
   });
 });
 
-describe('account 1', () => {
+describe.skipIf(claudeAccountsNotPorted())('account 1', () => {
   it('is launched with the account variables removed, and names itself to its status line', () => {
     const a = agent();
     const env = claudeAccountEnvFor(a, ctx({ usage: { [A]: full, [B]: full } }))!;
@@ -98,7 +99,7 @@ describe('account 1', () => {
   });
 });
 
-describe('another account', () => {
+describe.skipIf(claudeAccountsNotPorted())('another account', () => {
   it('is provisioned for the working directory, then named in the environment', () => {
     const a = agent();
     const env = claudeAccountEnvFor(a, ctx({ usage: { default: full, [B]: full } }))!;
@@ -169,7 +170,7 @@ describe('another account', () => {
   });
 });
 
-describe('the gaps QA found at the gate of #267', () => {
+describe.skipIf(claudeAccountsNotPorted())('the gaps QA found at the gate of #267', () => {
   it('does not count the agent being launched in the load (L7)', () => {
     // Its own launch a moment ago, on A: counted, it would push it off A onto B.
     const a = agent({ claudeAccountId: 'default' });
@@ -193,7 +194,7 @@ describe('the gaps QA found at the gate of #267', () => {
   });
 });
 
-describe('counting agents that are moving', () => {
+describe.skipIf(claudeAccountsNotPorted())('counting agents that are moving', () => {
   it('counts a choice made a moment ago, so agents launched together spread out', () => {
     const usage = { default: light(10), [A]: light(11), [B]: light(60) };
     const first = agent();
@@ -211,7 +212,7 @@ describe('counting agents that are moving', () => {
   });
 });
 
-describe('a move Tars asked for', () => {
+describe.skipIf(claudeAccountsNotPorted())('a move Tars asked for', () => {
   const asked = (a: AgentStatus, to: string) => requestMove(a.id, { to, reason: 'limit', window: 'fiveHour', usedPercentage: 100 });
 
   it('is made by the next terminal launch, which says from where, and only once', () => {

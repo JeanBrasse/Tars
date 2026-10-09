@@ -30,6 +30,7 @@
  *   write while it does not parse.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -275,7 +276,7 @@ describe('the file', () => {
     expect(registryProblem()).toBeNull();
   });
 
-  it('writes and reads back, readable by its owner only', () => {
+  it.skipIf(claudeAccountsNotPorted())('writes and reads back, readable by its owner only', () => {
     const { settings } = addAccount(setEnabled(defaultAccountsSettings(), true), 'Max two', ROOT);
     writeAccountsSettings(settings);
     expect(readAccountsSettings()).toEqual(settings);

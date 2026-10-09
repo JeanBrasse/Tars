@@ -91,8 +91,13 @@ function runningAgent(ptyId?: string): AgentStatus {
   } as AgentStatus;
 }
 
+// 1, 3, 4 and 8 run a bash process group and a reparented perl, read through
+// ps: POSIX only. On Windows a stop ends the ConPTY console through killPty
+// (pty-kill.test.ts); its whole tree is not read there yet (WINDOWS-PORT.md).
+const posixGroups = it.skipIf(process.platform === 'win32');
+
 describe('stopping an agent', () => {
-  it('1, 3. ends a CLI deaf to the hangup and its child, and leaves the agent stopped, not idle', async () => {
+  posixGroups('1, 3. ends a CLI deaf to the hangup and its child, and leaves the agent stopped, not idle', async () => {
     const t = await deafTerminal();
     expect(alive(t.job) && alive(t.child), 'the fixture did not start').toBe(true);
     ptyProcesses.set('pty-1', t.pty);
@@ -121,7 +126,7 @@ describe('stopping an agent', () => {
     expect(agent.ptyId).toBeUndefined();
   });
 
-  it('4. stays stopped when its terminal exits afterwards, with an error code or not', async () => {
+  posixGroups('4. stays stopped when its terminal exits afterwards, with an error code or not', async () => {
     const t = await deafTerminal();
     ptyProcesses.set('pty-1', t.pty);
     const agent = runningAgent('pty-1');
@@ -149,7 +154,7 @@ describe('stopping an agent', () => {
     expect(seen).toEqual(['saved:stopped:Tars', 'emitted:stopped', 'announced:stopped']);
   });
 
-  it('8. never SIGKILLs a process that is not a child of Tars, whatever pid the terminal names', async () => {
+  posixGroups('8. never SIGKILLs a process that is not a child of Tars, whatever pid the terminal names', async () => {
     // A sleep leading a group of its own, whose parent exits at once:
     // reparented to launchd, nobody's child here, as a process that took a
     // terminal's old pid would be.

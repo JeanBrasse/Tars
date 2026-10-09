@@ -29,6 +29,7 @@ import * as path from 'node:path';
  */
 
 const DOCK_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+const onWindows = process.platform === 'win32';
 /** A command no machine has. */
 const MISSING = 'tars-acp-no-such-agent-cli';
 
@@ -89,7 +90,7 @@ function handle(msg) {
   if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: {} });
   if (msg.method === 'session/new') return send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 's1' } });
   if (msg.method === 'session/prompt') {
-    const report = { stub: process.env.TARS_NPX_STUB, args: process.argv.slice(2), path: process.env.PATH };
+    const report = { stub: process.env.TARS_NPX_STUB || process.argv[1], args: process.argv.slice(2), path: process.env.PATH };
     send({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(report) } } } });
     return send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
   }
@@ -111,9 +112,29 @@ function script(name: string, body: string): string {
  */
 function stubNpx(dir: string): string {
   fs.mkdirSync(dir, { recursive: true });
-  const stub = path.join(dir, 'npx');
   const agent = script('reporting-agent', REPORTING_AGENT);
+  if (onWindows) return stubNpxCmd(dir, agent);
+  const stub = path.join(dir, 'npx');
   fs.writeFileSync(stub, `#!/bin/sh\nTARS_NPX_STUB="$0" exec "${process.execPath}" "${agent}" "$@"\n`, { mode: 0o755 });
+  return stub;
+}
+
+/**
+ * The same on Windows: npm's npx.cmd shim, which Tars reads through to the
+ * node and script it runs (audit A20), with node.exe beside it as in Node's
+ * own folder. What it runs is the reporting agent, copied into the stub's own
+ * folder, so the script is what says which npx ran.
+ */
+function stubNpxCmd(dir: string, agent: string): string {
+  const stub = path.join(dir, 'node_modules', 'npx-stub', 'npx-cli.mjs');
+  fs.mkdirSync(path.dirname(stub), { recursive: true });
+  fs.copyFileSync(agent, stub);
+  try { fs.linkSync(process.execPath, path.join(dir, 'node.exe')); } catch { fs.copyFileSync(process.execPath, path.join(dir, 'node.exe')); }
+  fs.writeFileSync(path.join(dir, 'npx.cmd'), [
+    '@ECHO off', 'GOTO start', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ':start', 'SETLOCAL', 'CALL :find_dp0', '',
+    'IF EXIST "%dp0%\\node.exe" (', '  SET "_prog=%dp0%\\node.exe"', ') ELSE (', '  SET "_prog=node"', '  SET PATHEXT=%PATHEXT:;.JS;=;%', ')', '',
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\npx-stub\\npx-cli.mjs" %*', '',
+  ].join('\r\n'));
   return stub;
 }
 
@@ -198,7 +219,11 @@ describe('an ACP agent whose command cannot be found', { timeout: CASE_TIMEOUT }
 });
 
 describe('an ACP agent that stops reading its input', { timeout: CASE_TIMEOUT }, () => {
-  it('fails the turn instead of throwing EPIPE, and stops the agent', async () => {
+  // Measured on Windows 11 (2026-09-25): a child that destroys its stdin, or closes
+  // fd 0 as well, leaves the pipe writable from this side, and the writes
+  // succeed until the process is gone. No agent there can make this EPIPE, and
+  // Windows has no /bin/sh to run this one.
+  it.skipIf(onWindows)('fails the turn instead of throwing EPIPE, and stops the agent', async () => {
     const pidFile = path.join(tmp, 'deaf-agent.pid');
     // A shell, because a Node agent cannot close its own fd 0 under the handle
     // Node keeps on it: libuv aborts. The ids are the client's own, 1 to 3.
@@ -315,10 +340,12 @@ describe('a delegation from an app opened from the Dock', { timeout: CASE_TIMEOU
     const report = JSON.parse(result.text) as { stub: string; args: string[]; path: string };
     expect(report.stub, 'another npx ran').toBe(stub);
     expect(report.args).toEqual(ARGS);
-    expect(report.path.split(':')[0], 'the agent does not get the PATH it was found on').toBe(dir);
+    expect(report.path.split(path.delimiter)[0], 'the agent does not get the PATH it was found on').toBe(dir);
   });
 
-  it('finds npx under ~/.nvm, where buildFullPath looks for it', async () => {
+  // buildFullPath's Windows rules have no ~/.nvm: nvm-windows puts the node it
+  // selects on the PATH itself (electron/platform/path-env.ts).
+  it.skipIf(onWindows)('finds npx under ~/.nvm, where buildFullPath looks for it', async () => {
     // HOME is the throwaway one of this run (see home-isolation.ts). The first
     // of buildFullPath's nvm folders, because it comes before /usr/local/bin,
     // where many machines, this one included, have an npx of their own.

@@ -1,7 +1,18 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+// The launch these hold is darwin and linux's: a line typed into the shell,
+// and a CLI read from what node-pty names in front. On a Windows host they read
+// it as linux; the win32 launch (the CLI as the terminal's process) is held by
+// launch-call-sites.test.ts and agent-terminal-win32.test.ts, and the hand-off
+// is noted before it, whatever the platform (bot-core.ts, typeLaunch).
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
 
 /**
  * Where a chat hands work over, as the task ledger records it (the Audit's Low 1 on #305: the mutants that made a

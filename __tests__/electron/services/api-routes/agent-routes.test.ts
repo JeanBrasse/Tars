@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
 
 const mockPtyProcess = {
@@ -54,6 +54,17 @@ import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
 
 /**
  * A terminal with a CLI up in it, opened the way every agent terminal is. The

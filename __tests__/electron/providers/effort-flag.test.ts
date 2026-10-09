@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { execFileSync } from 'node:child_process';
+import { argvReached, writeArgvPrinter } from './argv-reached';
 
 /**
  * Every effort level Tars stores reaches the claude binary, medium included,
@@ -17,7 +17,8 @@ import { execFileSync } from 'node:child_process';
  * header, "Opus 5.5 with <level> effort", for low, medium, high, xhigh, max).
  *
  * Read the way the CLI reads it: the command runs through a real shell into a
- * binary that prints its argv.
+ * binary that prints its argv (on Windows, which starts the CLI with no shell,
+ * through Tars's own launch: argv-reached.ts).
  */
 
 let tmpDir: string;
@@ -34,8 +35,7 @@ const CLAUDE_BINARY_PROVIDERS = [
 ];
 
 function argvOf(command: string): string[] {
-  const out = execFileSync('/bin/bash', ['-c', command], { encoding: 'utf-8' });
-  return JSON.parse(out.trim().split('\n').pop() as string) as string[];
+  return argvReached(command, tmpDir);
 }
 
 /** The values given to one option, as `--flag value` or `--flag=value`. */
@@ -58,8 +58,7 @@ async function provider(id: string) {
 }
 
 function params(effort: string | undefined) {
-  const binaryPath = path.join(tmpDir, 'claude-argv');
-  fs.writeFileSync(binaryPath, '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)));\n', { mode: 0o755 });
+  const binaryPath = writeArgvPrinter(path.join(tmpDir, 'claude-argv'));
   return { binaryPath, prompt: 'Say hi', model: 'claude-opus-5-5', permissionMode: 'bypass' as const, effort: effort as never };
 }
 
