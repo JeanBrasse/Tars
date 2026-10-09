@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { pathEntries, joinPathEntries, getPath, withPath, envValue } from '../../../electron/platform/path-env';
 
 /**
- * Reading, splitting and setting a PATH in an environment block (audit A16, A17).
+ * Reading, splitting and setting a PATH in an environment block.
  *
  * How it fails, written before the code (2026-09-25):
  * 1. win32: split on ':' and C:\a;D:\b becomes ['C', '\a;D', '\b'].
@@ -14,7 +14,7 @@ import { pathEntries, joinPathEntries, getPath, withPath, envValue } from '../..
  *    `Path` (Electron started from Explorer) reads as having none.
  * 5. win32: with `Path` and `PATH` both present, the stale one is read, or
  *    both reach node-pty, which builds the block with no case-insensitive
- *    dedupe: the child then sees the first (A17).
+ *    dedupe: the child then sees the first.
  * 6. withPath mutates the caller's object.
  * 7. darwin/linux: withPath touches a `Path` key, which is a different
  *    variable on a case-sensitive platform.

@@ -8,7 +8,7 @@ import { credentialStoreDirs } from '../../../electron/platform';
 import { moveTestHome } from '../../setup/test-home';
 
 /**
- * What the two Telegram send guards refuse on Windows (audit B M-03): the
+ * What the two Telegram send guards refuse on Windows: the
  * app's `isSafeTelegramPath` (the /api/telegram/send-* routes) and the MCP
  * server every agent is given. Both refused POSIX dotfiles under the home
  * only; Windows keeps its credentials in %APPDATA% and %LOCALAPPDATA%: the

@@ -53,9 +53,8 @@ import { promisify } from 'node:util';
  * 12. win32: a terminal in Windows PowerShell 5.1 (an agent's, pty:create,
  *    shell:startPty, the quick terminal) inherits the PSModulePath of a Tars
  *    started from PowerShell 7, finds pwsh 7's modules first and loses core
- *    cmdlets (platform/child-env.ts; real spawns in
- *    platform/psmodulepath-spawn.test.ts); or a pwsh, Git Bash or CLI
- *    terminal loses the parent's value.
+ *    cmdlets (platform/child-env.ts); or a pwsh, Git Bash or CLI terminal
+ *    loses the parent's value.
  * 13. darwin/linux: a terminal gets another environment than the parent's
  *    (a PSModulePath removed on the way).
  */
@@ -243,6 +242,7 @@ const { WIN_PATH, POSIX_PATH, WIN_DISK, CLAUDE_EXE, NODE_EXE, NPX_CLI, WIN_POWER
   };
 });
 
+import * as pty from 'node-pty';
 import { registerIpcHandlers, type IpcHandlerDependencies } from '../../../electron/handlers/ipc-handlers';
 import { broadcastToAllWindows } from '../../../electron/utils/broadcast';
 import { agentForToken } from '../../../electron/core/agent-tokens';
@@ -540,6 +540,27 @@ describe('2-6. on win32', () => {
     expect(typed(shell)).toBe('');
   });
 
+  it.each([
+    ['a local model, whose start opens a terminal of its own', (agent: AgentStatus) => { agent.provider = 'local'; }],
+    ['an agent moved to another folder, whose old terminal is replaced', (agent: AgentStatus) => {
+      agent.worktreePath = path.join(project, 'moved');
+      fs.mkdirSync(agent.worktreePath, { recursive: true });
+    }],
+  ])('10. the refusal comes before the shell is killed, for %s', async (_which, change) => {
+    const agent = await createAgent();
+    const shell = spawned[0];
+    agent.currentSessionId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    agent.sessionPtyId = agent.ptyId;
+    change(agent);
+
+    const result = await handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK }) as { success: boolean; cliRunning?: boolean; error?: string };
+
+    expect(result).toMatchObject({ success: false, cliRunning: true });
+    expect(result.error).toMatch(/typed into its terminal by hand/);
+    expect(shell.kill, 'the hand-typed session was ended').not.toHaveBeenCalled();
+    expect(spawned).toHaveLength(1);
+  });
+
   it('11. a CLI whose terminal cannot be opened leaves the agent as it was, from a window', async () => {
     const agent = await createAgent();
     agent.status = 'completed';
@@ -685,6 +706,20 @@ describe('2-6. on win32', () => {
     expect([spawned[3].file, spawned[3].args]).toEqual([CLAUDE_EXE, '"/plugin install thing@market"']);
   });
 
+  it('4. a next step that cannot be started ends the install there, and throws nothing out of the exit', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const command = 'claude plugin marketplace add owner/market && claude plugin install thing@market -y';
+    const { id } = await handlers.get('plugin:install-start')!({}, { command }) as { id: string };
+    vi.mocked(pty.spawn).mockImplementationOnce(() => { throw new Error('ConPTY refused the spawn'); });
+
+    expect(() => spawned[0].exit(0)).not.toThrow();
+
+    expect(spawned).toHaveLength(1);
+    expect(warn.mock.calls.map(c => c.map(String).join(' ')).join('\n')).toMatch(/not started.*ConPTY refused the spawn/s);
+    // The install's terminal is gone: nothing is left for plugin:install-kill to end.
+    expect(await handlers.get('plugin:install-kill')!({}, { id })).toMatchObject({ success: false });
+  });
+
   it('5. the version probes start the resolved binary by argv, parentheses in its path accepted', async () => {
     children.out.set(`${CLAUDE_EXE} --version`, '2.1.300 (Claude Code)\n');
     children.out.set(`${X86_CLAUDE} --version`, '2.1.301 (Claude Code)\n');
@@ -700,6 +735,10 @@ describe('2-6. on win32', () => {
       [CLAUDE_EXE, ['--version'], undefined],
       [X86_CLAUDE, ['--version'], undefined],
     ]);
+    // None opens a console window: Tars is a GUI program, claude a console one.
+    const started = children.calls.filter(c => c.fn === 'spawn' || c.args?.join(' ') === 'mcp list');
+    expect(started).toHaveLength(3);
+    for (const call of started) expect(call.options, `${call.file} ${call.args?.join(' ')}`).toMatchObject({ windowsHide: true });
   });
 });
 

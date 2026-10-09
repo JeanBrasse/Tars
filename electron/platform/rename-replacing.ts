@@ -2,13 +2,13 @@ import * as fs from 'fs';
 
 /**
  * Renaming a finished temp file over the live one, the last step of every
- * atomic write (audit B S-02), and deleting a file or a folder, while another
+ * atomic write, and deleting a file or a folder, while another
  * program may still hold it.
  *
  * darwin/linux: the one fs call, as before; a reader never stands in its way.
  *
  * win32: the rename fails with EPERM, EBUSY or EACCES while any process holds
- * the target open, even to read it (measured on this machine: 198 of 200
+ * the target open, even to read it (measured on Windows 11: 198 of 200
  * renames failed under 20 Node readers). Readers here are Claude Code opening
  * ~/.claude.json, an MCP server reading app-settings.json, an antivirus
  * scanning a file that just changed: each holds it for a moment. So the rename

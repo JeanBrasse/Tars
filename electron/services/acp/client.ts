@@ -113,7 +113,7 @@ function launchFailure(err: NodeJS.ErrnoException, command: string, cwd: string,
 /**
  * What start() spawns for a launch the registry named, in the environment the
  * agent gets: the command and its arguments as given on darwin and linux, and
- * on win32 the file the platform layer resolves the name to (audit A20). There
+ * on win32 the file the platform layer resolves the name to. There
  * `npx` is npx.cmd, which spawn cannot start without a shell and libuv does
  * not even find, so the shim is read through to the node.exe and script it
  * would run, the registry's arguments after them. The child gets its PATH
@@ -281,7 +281,7 @@ async function endProcessTree(root: number): Promise<void> {
 
 /**
  * win32's stop: the process Tars spawned and everything under it, by
- * `taskkill /T /F` (platform/kill-tree.ts, audit A21). Windows has neither
+ * `taskkill /T /F` (platform/kill-tree.ts). Windows has neither
  * process groups nor ps, and `child.kill()` ends the root alone: npx's node,
  * the adapter, the CLI and the commands it ran lived on. A child that has
  * already exited is left: the tree taskkill walks starts at it, and Windows

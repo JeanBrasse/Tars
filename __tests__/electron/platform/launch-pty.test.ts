@@ -16,9 +16,9 @@ import { posixWords } from '../../../electron/platform/posix-words';
  * 1. node-pty cannot start the file (a .cmd, a bare name, /bin/bash).
  * 2. node-pty re-quotes the string and the CLI receives other arguments.
  * 3. The multi-line prompt with ', ", %PATH%, & arrives cut, expanded or
- *    split, or one of its lines runs as a command (audit A4).
+ *    split, or one of its lines runs as a command.
  * 4. The CLI starts in another directory than the agent's.
- * 5. The child's PATH is not the one Tars composed (Path vs PATH, A17).
+ * 5. The child's PATH is not the one Tars composed (Path vs PATH).
  *
  * win32 only: on darwin/linux toLaunch returns today's bash shape, which the
  * existing exec-into-cli and pty suites cover.
@@ -84,8 +84,8 @@ describe('toLaunch through a real ConPTY', () => {
     // node-pty runs in a plain node process, handed the launch as it is: in
     // this one, home-isolation.ts wraps fs.openSync for writing and resolves
     // the target first, which takes the ConPTY input pipe's only instance, so
-    // node-pty's own open of it fails with EBUSY (a harness limit, reported
-    // to win-qa; Electron's main process has no such wrapper).
+    // node-pty's own open of it fails with EBUSY (a limit of the test
+    // harness; Electron's main process has no such wrapper).
     const launchFile = path.join(root, 'launch.json');
     fs.writeFileSync(launchFile, JSON.stringify(launch));
     const driver = [

@@ -1,5 +1,5 @@
 /**
- * argv as one Windows command line (audit A26, A27).
+ * argv as one Windows command line.
  *
  * Windows passes a process one string; the C runtime of the process started
  * (CommandLineToArgvW and the MSVC rules every Node, Rust and Go CLI follows)

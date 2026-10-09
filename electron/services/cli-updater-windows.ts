@@ -3,9 +3,9 @@ import * as path from 'path';
 import { envValue, getPath, resolveCliBinary, withPath } from '../platform';
 
 /**
- * How cli-updater.ts reads and updates the CLIs on Windows (audit A28). Its
- * own module, so that the upstream file carries one call per site and nothing
- * else: darwin and linux never reach anything here.
+ * How cli-updater.ts reads and updates the CLIs on Windows. Its own module,
+ * so that cli-updater.ts carries one call per site and nothing else: darwin
+ * and linux never reach anything here.
  *
  * Windows has the same two update paths as macOS, laid out otherwise, and
  * every CLI was "skipped: not installed" there until they were read as they

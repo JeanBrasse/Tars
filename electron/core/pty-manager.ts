@@ -1181,12 +1181,10 @@ export function createQuickPty(
   cwd: string | undefined,
   cols: number | undefined,
   rows: number | undefined,
-  mainWindow: BrowserWindow | null,
-  /** The user's terminalShell setting, read on Windows only (decision D3). */
-  shellSetting?: string,
+  mainWindow: BrowserWindow | null
 ): string {
   refuseWhileQuitting('terminal');
-  const shell = resolveShell({ setting: shellSetting });
+  const shell = resolveShell();
 
   const ptyProcess = pty.spawn(shell, shellArgs(shell), {
     name: 'xterm-256color',

@@ -5,9 +5,8 @@ import { toLaunch, LaunchError, type DirectLaunch, type Env } from '../platform'
 import { refuseWhileQuitting } from './quit-state';
 
 /**
- * The skill and plugin installers on Windows (decision D2, audit A5, B/A-06,
- * B/A-07): each program started by its argv in the terminal the renderer
- * shows, never through a shell. On darwin and linux these do nothing and the
+ * The skill and plugin installers on Windows: each program started by its
+ * argv in the terminal the renderer shows, never through a shell. On darwin and linux these do nothing and the
  * handlers in ipc-handlers.ts run as they always have.
  *
  * Why no shell there: `npx` is npx.cmd, which ConPTY cannot start by name;
@@ -96,8 +95,18 @@ function runSteps(
     // Still the install's terminal: plugin:install-kill has not taken it away.
     const current = terminals.get(id) === ptyProcess;
     if (current && exitCode === 0 && at + 1 < steps.length) {
-      runSteps(id, steps, at + 1, size, terminals, getMainWindow);
-      return;
+      try {
+        runSteps(id, steps, at + 1, size, terminals, getMainWindow);
+        return;
+      } catch (err) {
+        // The quit has begun, or ConPTY refused the spawn: the install ends
+        // here, as a step that failed, and nothing is thrown out of node-pty's
+        // exit callback, where no caller would catch it.
+        console.warn(`[installer] ${id}: step ${at + 2} of ${steps.length} not started:`, err);
+        getMainWindow()?.webContents.send('plugin:pty-exit', { id, exitCode: 1 });
+        terminals.delete(id);
+        return;
+      }
     }
     getMainWindow()?.webContents.send('plugin:pty-exit', { id, exitCode });
     if (current) terminals.delete(id);

@@ -64,7 +64,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
-import { resolveShell, shellArgs, childEnv, toLaunch, withPath, resolveCliBinary } from '../platform';
+import { resolveShell, shellArgs, childEnv, toLaunch, withPath, resolveCliBinary, cliEnv } from '../platform';
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -572,6 +572,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       throw new Error(`Invalid model name: ${options.model}`);
     }
 
+    // win32: a CLI typed by hand into the agent's shell, whose session
+    // registered from it, is refused here, before anything below kills that
+    // shell (a terminal left in another folder, the local provider's own).
+    // Nothing on darwin and linux, where the guard after it reads the terminal.
+    const handTyped = agent.ptyId && ptyProcesses.has(agent.ptyId) ? cliStartRefusal(agent) : undefined;
+    if (handTyped) return { success: false, cliRunning: true, error: handTyped };
+
     // If the agent's worktreePath changed after the PTY was spawned, the
     // existing PTY is stuck in the wrong cwd. Kill it so initAgentPty below
     // respawns with the correct working directory.
@@ -842,7 +849,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     });
 
     // How the command starts (platform/launch.ts): typed into the shell on
-    // darwin and linux, the CLI in the shell's place on win32 (decision D2).
+    // darwin and linux, the CLI in the shell's place on win32.
     // Worked out before the status says it runs: a CLI Windows cannot start,
     // or a shell it may not replace, leaves the agent as it was.
     const start = toLaunch(command, agent.worktreePath || agent.projectPath, agentPtyEnv(ptyProcess) ?? process.env);
@@ -2862,12 +2869,15 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
               exec('claude mcp list', { timeout: 3000 }, done);
               return;
             }
-            const claude = resolveCliBinary('claude', process.env, 'win32');
+            // Looked up on the PATH an agent gets, as execCli does, and started
+            // with no console window.
+            const env = (cliEnv('win32') ?? process.env) as NodeJS.ProcessEnv;
+            const claude = resolveCliBinary('claude', env, 'win32');
             if (!claude.ok) {
               resolve();
               return;
             }
-            execFile(claude.file, [...claude.prefixArgs, 'mcp', 'list'], { timeout: 3000 }, done);
+            execFile(claude.file, [...claude.prefixArgs, 'mcp', 'list'], { timeout: 3000, env, windowsHide: true }, done);
           });
         } catch {
           // claude CLI not available

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
- * The PATH every agent, ACP run and updater is given (audit A16, A17).
+ * The PATH every agent, ACP run and updater is given.
  *
  * How it fails, written before the code (2026-09-25):
  * 1. darwin/linux: any byte of today's output changes (order, a dropped
@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * 7. win32: the macOS-only entries (/usr/local/bin, /opt/homebrew/bin, nvm's
  *    bin dirs) are added to a Windows PATH.
  * 8. A directory listing that throws takes the whole PATH down with it.
- * 9. win32 (orchestrator's decision at win-reviewer's gate, 2026-09-25): the
+ * 9. win32 (decided at review, 2026-09-25): the
  *    default Windows CLI dirs are put before the existing entries, so a
  *    where.exe, curl.exe or tar.exe dropped in %APPDATA%\npm or .local\bin
  *    shadows System32's. They go after; the user's own cliPathDirs stay first,

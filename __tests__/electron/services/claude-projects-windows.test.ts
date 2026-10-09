@@ -9,8 +9,8 @@ import { listProjectMemories, createMemoryFile } from '../../../electron/service
 import { writeProjectMemory } from '../../../electron/services/memory-hub';
 
 /**
- * The surfaces that read `~/.claude/projects` on Windows (audit B H-01, H-03,
- * H-04, W-02), each driven through its real function against folders named the
+ * The surfaces that read `~/.claude/projects` on Windows, each driven through
+ * its real function against folders named the
  * way Claude Code names them on Windows (C--Users-...).
  *
  * How they fail, written before the fix:
@@ -58,7 +58,7 @@ describe.runIf(process.platform === 'win32')('Claude\'s project folders on Windo
     expect(listed.filter(p => p.includes('.worktrees'))).toEqual([]);
   });
 
-  // The reviewer's gate: '/' was skipped by string, and Claude's folder for a
+  // Found at review: '/' was skipped by string, and Claude's folder for a
   // session run at a drive's root (C--) listed C:\ as a project.
   it('7. does not list a drive root as a project', async () => {
     fs.mkdirSync(path.join(projectsDir, 'C--'), { recursive: true });

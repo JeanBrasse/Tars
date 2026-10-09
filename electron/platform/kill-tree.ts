@@ -4,7 +4,7 @@ import type { Env } from './fs-probe';
 import { envValue } from './path-env';
 
 /**
- * End a process and every process under it (audit A21).
+ * End a process and every process under it.
  *
  * win32: `taskkill /PID <pid> /T /F`, by its absolute path under
  * %SystemRoot%\System32 (never looked up on the PATH, where an agent's project
@@ -13,7 +13,7 @@ import { envValue } from './path-env';
  *
  * darwin/linux: nothing runs, the answer is `not-win32`. The callers keep the
  * process-group kill they have today (acp/client.ts `process.kill(-pid)`,
- * with its `ps` walk); this lot changes none of it.
+ * with its `ps` walk); nothing here changes it.
  */
 
 export type KillTreeResult = { outcome: 'killed' } | { outcome: 'already-gone' } | { outcome: 'not-win32' };

@@ -132,7 +132,7 @@ export function normalizeAccountsSettings(raw: unknown, root: string = accountsR
 export function readAccountsSettings(platform: NodeJS.Platform = process.platform): ClaudeAccountsSettings {
   try {
     const settings = normalizeAccountsSettings(JSON.parse(fs.readFileSync(accountsFile(), 'utf-8')));
-    // Off on a Windows build until the accounts are ported (D17), accounts kept.
+    // Off on a Windows build until the accounts are ported there, accounts kept.
     return claudeAccountsAvailable(platform) ? settings : { ...settings, enabled: false };
   } catch {
     return defaultAccountsSettings();

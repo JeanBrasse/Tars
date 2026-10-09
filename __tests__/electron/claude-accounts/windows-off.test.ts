@@ -4,11 +4,10 @@ import * as path from 'path';
 import { accountsFile, readAccountsSettings } from '../../../electron/services/claude-accounts/registry';
 
 /**
- * D17 (Nicolas, 2026-10-02): several Claude accounts are off on a Windows
- * build until they are ported (their folders' owner-only checks are POSIX
- * modes, and their sign-in starts claude by its bare name). Settings hides
- * the section there (claude-accounts-offered.test.ts); this is main's half,
- * the one that starts agents on an account.
+ * Several Claude accounts are off on a Windows build until they are ported
+ * (their folders' owner-only checks are POSIX modes, and their sign-in starts
+ * claude by its bare name). This is the main process's side, the one that starts agents
+ * on an account; Settings still shows the switch on Windows at this point.
  *
  * How it fails, written before the code:
  * 1. On win32 a registry that says on (copied from a Mac, edited by hand, or

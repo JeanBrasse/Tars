@@ -7,7 +7,7 @@ import { realFs, type FsProbe } from '../../../electron/platform/fs-probe';
 
 /**
  * Which file to start for a CLI name on win32, and with what in front of the
- * arguments (audit A5, A18, B/C-02, B/C-03).
+ * arguments.
  *
  * How it fails, written before the code (2026-09-25):
  * 1. A bare name is looked up without PATHEXT, so `npx` (only npx.cmd
@@ -17,7 +17,7 @@ import { realFs, type FsProbe } from '../../../electron/platform/fs-probe';
  *    as a PATH hit or as a configured cliPath.
  * 3. A .cmd is returned as the file to spawn: node refuses it since
  *    CVE-2024-27980 (EINVAL), and going through cmd.exe caps the line at 8191
- *    characters, splits on newlines and expands % ^ & (audit A27).
+ *    characters, splits on newlines and expands % ^ &.
  * 4. An npm node shim is not read through: the result must be node.exe plus
  *    the shim's own script, with node.exe the shim's sibling when present,
  *    else `node` found on the PATH (the shim's own rule).
@@ -42,7 +42,7 @@ import { realFs, type FsProbe } from '../../../electron/platform/fs-probe';
  *    target, with a native exe target, and Node's own npx.cmd) are not
  *    recognised.
  *
- * Added at win-reviewer's gate (2026-09-25), written before the fixes:
+ * Added at review (2026-09-25), written before the fixes:
  * 15. The disk is asked about a relative path at all: Windows resolves it
  *    against the current directory, so a relative PATH entry (`.`, `bin`,
  *    `\dir`) finds a planted claude.exe. The fake disk below resolves

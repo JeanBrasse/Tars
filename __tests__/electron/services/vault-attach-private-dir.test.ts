@@ -175,7 +175,7 @@ describe('attaching a file to a vault document', () => {
   it('refuses the private directory reached through a symlink', async () => {
     const link = path.join(tmp, 'innocent-looking');
     fs.rmSync(link, { force: true });
-    // A junction: Windows lets any account make one (decision D4); the type is ignored off Windows.
+    // A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
     fs.symlinkSync(privateDir, link, 'junction');
     secretFile();
 

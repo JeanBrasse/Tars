@@ -8,7 +8,7 @@ import { writeAtomicSync } from '../../../electron/utils/secret-file';
 import { updateSharedJsonSync } from '../../../electron/utils/shared-file';
 
 /**
- * Replacing a file another program is reading (audit B S-02). Every atomic
+ * Replacing a file another program is reading. Every atomic
  * write in Tars ends in a rename over the live file: app-settings.json,
  * agents.json, ~/.claude.json, mcp.json. On Windows that rename fails with
  * EPERM while any process holds the file open, even for reading; measured on

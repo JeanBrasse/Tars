@@ -11,8 +11,8 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
 import { readDacls, currentUserSid, type Dacl } from './read-dacl';
 
 /**
- * Closing a secret to every account but its owner, on Windows (audit B S-01,
- * the decision in tasks/todo.md). `0o600` and `0o700` do nothing there: Node
+ * Closing a secret to every account but its owner, on Windows. `0o600` and
+ * `0o700` do nothing there: Node
  * maps chmod to the read-only bit. So `api-token`, `app-settings.json` and
  * everything under `~/.tars-private` get an access list instead: the current
  * user and SYSTEM, full control, nothing inherited. `icacls` by its System32
@@ -42,7 +42,7 @@ import { readDacls, currentUserSid, type Dacl } from './read-dacl';
  *     Measured: icacls /reset does not follow a junction, so the junction
  *     case holds with or without the check; icacls does follow a symbolic
  *     link (its /L says so), which is the case the check is for, and needs
- *     the symlink privilege (CI windows-latest; skipped here, decision D4).
+ *     the symlink privilege (CI windows-latest; skipped on an account without it).
  *  9. darwin/linux: anything at all runs. icacls and whoami do not exist
  *     there, and the modes already do the job.
  * 10. The pass at startup holds its caller until every icacls has run: two

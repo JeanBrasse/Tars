@@ -6,28 +6,24 @@
  * and says why, once per file, the first time it does. Each of these still
  * runs on macOS, Linux and CI's ubuntu, where the thing exists.
  *
- * - The `.sh` hooks and the bash status line: Windows ships neither (decision
- *   D1, WINDOWS-PORT.md). The CLIs there run the Node runner
- *   (hooks/tars-hook.mjs, hooks/statusline.mjs), held by node-hook-*.test.ts
- *   and node-statusline.test.ts. A test whose subject is a `.sh` script run by
- *   bash has nothing to run there.
+ * - The `.sh` hooks and the bash status line: Windows ships neither. The
+ *   CLIs there run hooks written for Node instead, with tests of their own. A
+ *   test whose subject is a `.sh` script run by bash has nothing to run there.
  * - POSIX permission bits: Windows has none. chmod sets or clears the
  *   read-only attribute and stat reports 0o666 or 0o444 whatever was asked
- *   (audit B/S-01, SECURITY.md section 7). Only the assertion on the bits is
- *   skipped; the rest of its test runs.
+ *   (the secret files are closed by an access list there instead). Only the
+ *   assertion on the bits is skipped; the rest of its test runs.
  */
 
 export const SH_HOOKS_REASON = 'the .sh hooks and the bash status line do not ship on Windows '
-  + '(decision D1: the CLIs run hooks/tars-hook.mjs and hooks/statusline.mjs there, held by '
-  + 'node-hook-*.test.ts and node-statusline.test.ts); these run on macOS, Linux and CI';
+  + '(the CLIs run hooks written for Node there, with tests of their own); these run on macOS, Linux and CI';
 
 export const POSIX_MODES_REASON = 'Windows has no POSIX permission bits: chmod only sets the read-only '
-  + 'attribute and stat reports 0o666 or 0o444 (audit B/S-01, SECURITY.md section 7); the mode is '
+  + 'attribute and stat reports 0o666 or 0o444; the mode is '
   + 'asserted on macOS, Linux and CI, and the rest of the test runs here';
 
 export const ACCOUNTS_REASON = 'several Claude accounts are off on a Windows build until they are ported '
-  + '(decision D17: owner-only folders by POSIX modes, sign-in by the bare claude; held '
-  + 'there by windows-off.test.ts and claude-accounts-offered.test.ts); these run on macOS, Linux and CI';
+  + '(owner-only folders by POSIX modes, sign-in by the bare claude); these run on macOS, Linux and CI';
 
 const said = new Set<string>();
 
@@ -62,7 +58,7 @@ export function hasPosixModes(): boolean {
   return !skipOnWindows(POSIX_MODES_REASON);
 }
 
-/** True where the Claude accounts feature is off (D17), for `skipIf`, having said why. */
+/** True where the Claude accounts feature is off, for `skipIf`, having said why. */
 export function claudeAccountsNotPorted(): boolean {
   return skipOnWindows(ACCOUNTS_REASON);
 }

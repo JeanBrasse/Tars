@@ -6,7 +6,7 @@ import { envValue } from './path-env';
 
 /**
  * Close a secret file, or the private directory, to every account but its
- * owner, on Windows (audit B S-01, the decision in tasks/todo.md).
+ * owner, on Windows.
  *
  * `0o600` and `0o700` do nothing there: Node maps chmod to the read-only bit.
  * What stands in for them is the access list: the current user and SYSTEM,
@@ -18,7 +18,7 @@ import { envValue } from './path-env';
  *
  * Not a boundary against the agents: they run as the same user, and the user
  * keeps full control. What it keeps out is the other accounts on the machine,
- * the sandbox accounts included (SECURITY.md section 7).
+ * the sandbox accounts included.
  *
  * icacls and whoami by their absolute path under %SystemRoot%\System32, never
  * looked up on the PATH (where an agent's project could plant one), with an

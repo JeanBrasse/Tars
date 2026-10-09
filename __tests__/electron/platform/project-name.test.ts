@@ -4,7 +4,7 @@ import { projectName } from '../../../electron/platform/project-name';
 
 /**
  * The name a project goes by in the bots' agent lines: the last folder of its
- * path (audit B/J-01).
+ * path.
  *
  * Each site took `projectPath.split('/').pop()`. A Windows path has no `/`, so
  * Telegram, Slack and Discord named every project by its whole path

@@ -144,7 +144,7 @@ describe('needsPromptInjection', () => {
   });
 });
 
-// The reviewer's gate of win/paths-memory-security: on macOS and Linux the old
+// Found at review: on macOS and Linux the old
 // `/`-only spelling of `..` is `..`, and projectMemoryDir took it when
 // ~/.claude/memory existed, so /api/memory/write wrote outside the projects folder.
 describe('writeProjectMemory for a path of dots', () => {
