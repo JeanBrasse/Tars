@@ -30,6 +30,7 @@ let fakePath: string;
 let savedLog: string | undefined;
 let unpin: (() => void) | undefined;
 const execCalls: string[] = [];
+const execFileOptions: Array<Record<string, unknown>> = [];
 let captureExecFile: ((file: string, args: string[], opts: { env: Record<string, string> }) => string) | null = null;
 let captureExec: ((cmd: string, opts: { env: Record<string, string> }) => string) | null = null;
 
@@ -50,6 +51,7 @@ vi.mock('child_process', async (importOriginal) => {
       return actual.exec(...args);
     },
     execFile: (file: string, args: string[], opts: { env: Record<string, string> }, cb: (e: Error | null, out: string, err: string) => void) => {
+      execFileOptions.push(opts);
       if (captureExecFile) {
         const stdout = captureExecFile(file, args, opts);
         setImmediate(() => cb(null, stdout, ''));
@@ -94,6 +96,7 @@ const PROJECTS = [{ path: path.join('a b (x)', 'pro\'j'), name: 'pro"ject\'s & %
 beforeEach(() => {
   vi.resetModules();
   execCalls.length = 0;
+  execFileOptions.length = 0;
   captureExecFile = null;
   captureExec = null;
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-kanban-gen-'));
@@ -130,6 +133,8 @@ describe('generateTaskFromPrompt', () => {
     expect(task.priority).toBe('high');
     // darwin/linux: through /bin/sh, as before, which reads the quoted line back to the same argv.
     expect(execCalls).toHaveLength(process.platform === 'win32' ? 0 : 1);
+    // win32: and with no console window, Tars being a GUI program.
+    if (process.platform === 'win32') expect(execFileOptions).toEqual([expect.objectContaining({ windowsHide: true })]);
   });
 
   it('darwin/linux: the provider\'s command line handed to /bin/sh as before, the env { ...process.env, PATH }', async () => {

@@ -172,6 +172,15 @@ describe('codex config.toml fallback', () => {
     expect(table).toEqual({ command: 'node', args: ['/tmp/a "b"/s.js'] });
   });
 
+  it('a control character in a path, DEL included, parses back to itself', async () => {
+    // TOML refuses U+007F raw in a basic string, which JSON leaves as it is.
+    const p = await codex();
+    await p.registerMcpServer('srv', 'node', ['/tmp/a\u007fb\u0001c/s.js']);
+
+    const table = parseTomlSubset(configOf('.codex'))['mcp_servers\u0000srv'];
+    expect(table).toEqual({ command: 'node', args: ['/tmp/a\u007fb\u0001c/s.js'] });
+  });
+
   it('darwin/linux: the bytes the old writer wrote, for paths with no backslash and no quote', async () => {
     const p = await codex();
     fs.mkdirSync(path.join(tmpDir, '.codex'), { recursive: true });
