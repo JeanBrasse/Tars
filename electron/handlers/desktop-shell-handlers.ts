@@ -11,12 +11,16 @@ import { isWindowsShell, parseTitleBarOverlay, TITLE_BAR_OVERLAY_HEIGHT } from '
  *   shell when the theme changes. Honoured for the main window only, on
  *   Windows only, and only for two `#rrggbb` colours.
  */
-export function registerDesktopShellHandlers(deps: { getMainWindow: () => BrowserWindow | null }): void {
-  ipcMain.handle('desktop:detectShells', () => detectShells());
+export function registerDesktopShellHandlers(deps: {
+  getMainWindow: () => BrowserWindow | null;
+  platform?: NodeJS.Platform;
+}): void {
+  const platform = deps.platform ?? process.platform;
+  ipcMain.handle('desktop:detectShells', () => detectShells({ platform }));
 
   ipcMain.handle('desktop:setTitleBarOverlay', (event, colours: unknown) => {
     const win = deps.getMainWindow();
-    if (!isWindowsShell(process.platform) || !win || win.isDestroyed() || win.webContents !== event.sender) {
+    if (!isWindowsShell(platform) || !win || win.isDestroyed() || win.webContents !== event.sender) {
       return { success: false, error: 'no title bar overlay here' };
     }
     const parsed = parseTitleBarOverlay(colours);

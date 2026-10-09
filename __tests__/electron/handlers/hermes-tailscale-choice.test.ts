@@ -70,6 +70,8 @@ afterEach(() => {
 const status = () => ran.filter(r => r.endsWith(' status --json')).map(r => r.slice(0, -' status --json'.length));
 
 describe('the tailscale the Hermes page asks', () => {
+  // The first cold import of the handlers' module graph, which can take
+  // longer than one test's 5 s on a loaded machine.
   it('1. is the one DOROTHY_TAILSCALE_BIN names, and no other', async () => {
     process.env.DOROTHY_TAILSCALE_BIN = '/sandbox/fake-tailscale';
     const result = await info();
@@ -77,7 +79,7 @@ describe('the tailscale the Hermes page asks', () => {
     expect(result.webhookTailnetUrl).toBe('https://tars-sandbox.example.ts.net/api/webhooks/hermes');
     // 1b. serve status too
     expect(ran).toEqual(['/sandbox/fake-tailscale status --json', '/sandbox/fake-tailscale serve status']);
-  });
+  }, 60_000);
 
   it.each([['empty', ''], ['blank', '   ']])('2. is none when it is %s', async (_what, value) => {
     process.env.DOROTHY_TAILSCALE_BIN = value;

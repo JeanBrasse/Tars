@@ -136,11 +136,6 @@ export function updateTrayAttention(hasWaiting: boolean): void {
   }
 }
 
-/** The tray icon, for the panel position and the E2E spec that checks it. */
-export function getTray(): Tray | null {
-  return tray;
-}
-
 export function rebuildTrayMenu() {
   // No-op: the tray panel is live via IPC, no native menu to rebuild
 }

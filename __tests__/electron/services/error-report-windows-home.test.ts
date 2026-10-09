@@ -3,7 +3,7 @@ import { toReport, type ReportFacts } from '../../../electron/services/error-rep
 
 /**
  * An error report from Windows keeps the home folder and the user name out,
- * as one from macOS does (error-report-shape.test.ts, upstream #221).
+ * as one from macOS does (error-report-shape.test.ts, #221).
  *
  * The report's scrub knew a home spelled one way, `/Users/somebody`, and took
  * the user name as what follows its last `/`. A Windows home is

@@ -24,7 +24,10 @@ import { windowsSoundCommand } from '../../../electron/platform';
  *    instead of System32, or a profile script runs first;
  * 6. the script is not fixed: it changes with the file;
  * 7. on this machine, a file named to run code, played through the real
- *    command, runs it (the canary appears), or does not play.
+ *    command, runs it (the canary appears), or does not play;
+ * 11. a SystemRoot that is not a plain absolute path (`Windows`, `C:Windows`,
+ *    `\Windows`, one holding a stream colon) is trusted, so the PowerShell run
+ *    is found against the working directory, an agent's project.
  */
 
 const SYSTEM_ROOT = 'C:\\Windows';
@@ -64,6 +67,18 @@ describe('the command that plays a notification sound on Windows', () => {
     expect(r.ok && r.env.Path).toBe(env.Path);
   });
 
+  it('11. takes SystemRoot only when it is a plain absolute path, C:\\Windows otherwise', () => {
+    const file = 'C:\\s\\ding.wav';
+    const run = (SystemRoot: string) => {
+      const r = windowsSoundCommand(file, { env: { ...env, SystemRoot }, fs: exists([file]) });
+      return r.ok ? r.file : r.error;
+    };
+    for (const bad of ['Windows', 'C:Windows', '\\Windows', '.\\Windows', 'C:\\Windows:evil', '']) {
+      expect(run(bad), JSON.stringify(bad)).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+    }
+    expect(run('D:\\WinNT')).toBe('D:\\WinNT\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  });
+
   it('2, 3, 4. refuses anything but a local .wav that exists, before touching the disk for a UNC path', () => {
     const touched: string[] = [];
     const probe = { isFile: (p: string) => { touched.push(p); return true; }, readFile: () => '' };
@@ -85,7 +100,10 @@ describe('the command that plays a notification sound on Windows', () => {
  * 8. a link (symlink or junction) at any level whose target is a UNC path,
  *    `\\?\UNC\...`, a device (`\\.\...`) or `\\?\GLOBALROOT` is followed;
  * 9. the link is followed to find that out (reading its target must not open it);
- * 10. a link to a local folder is refused, or a loop of links hangs.
+ * 10. a link to a local folder is refused, or a loop of links hangs;
+ * 12. a target stored as an NT path (`\GLOBAL??\UNC\host\share`,
+ *    `\??\UNC\host\share`, `\Device\Mup\host\share`), which starts with one
+ *    `\`, is read as a folder of the current drive and followed.
  */
 describe('8, 9, 10. links on the way to the file', () => {
   const file = 'C:\\s\\sub\\ding.wav';
@@ -104,8 +122,16 @@ describe('8, 9, 10. links on the way to the file', () => {
     }
   });
 
+  it('12. refuses a target stored as an NT path, or rooted on no drive, before anything is opened', () => {
+    for (const target of ['\\GLOBAL??\\UNC\\attacker\\share', '\\??\\UNC\\attacker\\share', '\\Device\\Mup\\attacker\\share', '\\sounds', '/sounds']) {
+      opened.length = 0;
+      expect(windowsSoundCommand(file, { env, fs: disk, readLink: links({ 'c:\\s': target }) }).ok, target).toBe(false);
+      expect(opened).toEqual([]);
+    }
+  });
+
   it('follows links to local folders, whatever form the target takes, and ends a loop', () => {
-    for (const target of ['D:\\sounds', '\\\\?\\D:\\sounds', 'sounds2']) {
+    for (const target of ['D:\\sounds', '\\\\?\\D:\\sounds', '\\??\\D:\\sounds', 'sounds2']) {
       expect(windowsSoundCommand(file, { env, fs: disk, readLink: links({ 'c:\\s': target }) }).ok, target).toBe(true);
     }
     // A local link whose own target is on a share is still a share.
