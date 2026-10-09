@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * A notification reaches Tars with the words the CLI wrote, and nothing after.
@@ -19,9 +20,11 @@ const HOOK = path.join(__dirname, '../../hooks/notification.sh');
 const received: Array<{ url: string; body: Record<string, unknown> }> = [];
 let server: http.Server;
 let port = 0;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-notification-hook-'));
+/** Made in beforeAll, so a file whose tests all skip makes nothing it would not remove. */
+let tmp: string;
 
 beforeAll(async () => {
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-notification-hook-'));
   server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', chunk => { raw += chunk; });
@@ -35,7 +38,10 @@ beforeAll(async () => {
   port = (server.address() as { port: number }).port;
 });
 
-afterAll(() => new Promise<void>(resolve => server.close(() => resolve())));
+afterAll(async () => {
+  await new Promise<void>(resolve => server.close(() => resolve()));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
 
 async function notify(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   received.length = 0;
@@ -54,7 +60,7 @@ async function notify(payload: Record<string, unknown>): Promise<Record<string, 
   return post!.body;
 }
 
-describe('notification.sh', () => {
+describe.skipIf(shHooksNotShipped())('notification.sh', () => {
   it('sends the title and the message exactly as the CLI wrote them', async () => {
     const body = await notify({
       session_id: 's1', notification_type: 'permission_prompt',

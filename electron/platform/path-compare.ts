@@ -2,7 +2,7 @@ import * as path from 'path';
 
 /**
  * Whether two paths name one place, and whether one is inside another, by
- * their spelling (audit B W-02, W-03, U-08). No disk access: a link or an 8.3
+ * their spelling. No disk access: a link or an 8.3
  * short name is another spelling to these, as it was to the string
  * comparisons they replace.
  *

@@ -18,7 +18,7 @@ import { childEnv, envValue, findOnPath, realFs, resolveShell, shellArgs, type E
  * argv array and no shell: the directory is never parsed as a command. Before
  * this, Linux ran osascript and answered "spawn osascript ENOENT".
  *
- * Windows (audit B L-01): Windows Terminal, `wt.exe -d <dir>`, when it is on
+ * Windows: Windows Terminal, `wt.exe -d <dir>`, when it is on
  * the PATH; otherwise the user's shell (resolveShell: pwsh, Windows PowerShell,
  * cmd) in a new console window, which a detached console program does not get
  * by itself, so System32's conhost.exe starts it, the directory its cwd. argv

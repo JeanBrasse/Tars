@@ -409,10 +409,11 @@ export interface AppSettings {
   autoStartAgentsOnLaunch?: boolean;
   cliPaths: CLIPaths;
   /**
-   * The shell a terminal runs on Windows (decision D3): a path (Git Bash is
+   * The shell a terminal runs on Windows: a path (Git Bash is
    * `C:\Program Files\Git\bin\bash.exe`; a bare `bash` finds WSL's first), or a
    * name on the PATH such as `pwsh`. Unset: pwsh.exe, else Windows PowerShell,
-   * else cmd.exe. Read on Windows only; set from Settings > Terminal (D9).
+   * else cmd.exe. Read on Windows only. Nothing in Settings sets it yet: until
+   * a picker is added there, it is set by hand in app-settings.json.
    */
   terminalShell?: string;
   /** Windows: the first close has explained that Tars keeps running in the tray. */

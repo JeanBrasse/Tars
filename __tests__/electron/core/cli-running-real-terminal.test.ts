@@ -26,12 +26,12 @@ import { skipOnWindows } from '../../setup/platform-limits';
 
 /**
  * Windows opens neither shape: an agent's CLI is the terminal's own process
- * (decision D2) and a person's terminal is PowerShell (D3), and ConPTY does not
- * name the process in front, which WINDOWS-PORT.md lists as a known limit.
- * What it opens there is held by agent-terminal-win32.test.ts.
+ * and a person's terminal is PowerShell, and ConPTY does not name the process
+ * in front, a known limit there. What it opens there is held by
+ * agent-terminal-win32.test.ts.
  */
 const posixTerminal = () => skipOnWindows('these open bash terminals, the shapes Tars opens on macOS and Linux; '
-  + 'Windows starts the CLI as the terminal\'s own process (decisions D2, D3), held by agent-terminal-win32.test.ts');
+  + 'Windows starts the CLI as the terminal\'s own process, held by agent-terminal-win32.test.ts');
 
 const opened: pty.IPty[] = [];
 

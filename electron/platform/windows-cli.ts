@@ -5,11 +5,10 @@ import { envValue, getPath, pathEntries, unquoteEntry } from './path-env';
 import { isPlainAbsolute, pathExts, resolveCliBinary, type CliBinaryFailure } from './cli-binary';
 
 /**
- * Finding a CLI on Windows, for Settings > CLI paths and Google Workspace
- * (audit B/C-01..C-05): a path the user typed with or without its extension,
- * a name in the folders Windows installers use and then along the PATH.
- * Moved here from providers/cli-exec.ts, unchanged. win32 only: the callers
- * ask on win32 and nowhere else.
+ * Finding a CLI on Windows, for Settings > CLI paths and Google Workspace: a
+ * path the user typed with or without its extension, a name in the folders
+ * Windows installers use and then along the PATH. win32 only: the callers ask
+ * on win32 and nowhere else.
  */
 
 /** Whether the lookup wants a CLI Tars will start, or a command file that only has to be there (gcloud.cmd, which gws runs). */

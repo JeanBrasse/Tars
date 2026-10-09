@@ -3,8 +3,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 /**
  * darwin and linux after the Windows paths lot: the decoder and the transcript
  * lookup give what they gave before, on any host. posix-golden.json was
- * captured from windows 4b26873f, with POSIX path semantics and the disk laid
- * out as posix-corpus.ts says, before any of this lot's code existed. Here the
+ * captured from the code before this change, with POSIX path semantics and
+ * the disk laid out as posix-corpus.ts says. Here the
  * process says it is darwin, then linux, and `path` is POSIX's, so the run is
  * the same on a Mac, on Linux and on Windows.
  *

@@ -81,7 +81,8 @@ IMPORTANT: Respond with ONLY the JSON object, no markdown, no explanation, just 
           resolve(stdout.trim());
         }
       };
-      if (windowsCli) execFile(windowsCli.file, windowsCli.args, options, done);
+      // No console window for it: Tars is a GUI program, the CLI a console one.
+      if (windowsCli) execFile(windowsCli.file, windowsCli.args, { ...options, windowsHide: true }, done);
       else exec(command, options, done);
     });
 

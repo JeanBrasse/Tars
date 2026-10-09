@@ -4,6 +4,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * The one post that restores a live session's ownership.
@@ -31,9 +32,11 @@ let received: { body: string }[] = [];
 /** How many posts to kill before answering. */
 let dropFirst = 0;
 let scriptUnderTest: string;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-hook-'));
+/** Made in beforeAll, so a file whose tests all skip makes nothing it would not remove. */
+let tmp: string;
 
 beforeAll(async () => {
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-hook-'));
   server = http.createServer((req, res) => {
     if (req.url === '/api/health') {
       res.writeHead(200);
@@ -100,7 +103,7 @@ async function submitPrompt(): Promise<void> {
   await runHook(JSON.stringify({ session_id: 'session-live-1', prompt: 'rebase onto main' }));
 }
 
-describe('the status post that restores ownership', () => {
+describe.skipIf(shHooksNotShipped())('the status post that restores ownership', () => {
   it('gets through on the first try when the API answers', async () => {
     await submitPrompt();
 

@@ -4,7 +4,7 @@ import { envValue } from './path-env';
 
 /**
  * Where Windows programs keep credentials, for the guards that decide which
- * files an agent may send out of the machine (audit B M-03): the app's
+ * files an agent may send out of the machine: the app's
  * `isSafeTelegramPath` and, in its own copy, the Telegram MCP server's.
  *
  * On macOS and Linux those guards refuse the home's dotfiles (`~/.ssh`,

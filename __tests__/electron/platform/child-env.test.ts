@@ -7,7 +7,7 @@ import { childEnv } from '../../../electron/platform';
  * its own. When Tars runs under PowerShell 7 (started from pwsh, Windows
  * Terminal, CI's step shell), the variable lists PowerShell 7's Core-only
  * modules first; 5.1 finds them, cannot load them, and loses New-Object,
- * Get-Acl and the rest (the real spawns: psmodulepath-spawn.test.ts).
+ * Get-Acl and the rest.
  *
  * How it fails, written before the code:
  * 1. A Windows PowerShell child keeps the variable when named another way:

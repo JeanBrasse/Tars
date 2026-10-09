@@ -8,8 +8,7 @@ import {
 } from '../platform';
 
 /**
- * How Tars runs a CLI outside an agent's PTY, and finds one on Windows
- * (audit A11, A18, A24, B/C-01..C-05, B/M-01).
+ * How Tars runs a CLI outside an agent's PTY, and finds one on Windows.
  *
  * Registering an MCP server (`claude mcp add`, `codex mcp add`, ...), asking
  * `claude mcp list`, the kanban's one-shot `claude -p`, `gws auth status`:
@@ -19,8 +18,10 @@ import {
  * a line handed to cmd.exe is split and expanded. Here the name goes through
  * the platform layer's resolveCliBinary and the CLI is started with execFile
  * and an argv: `file` is a .exe or node.exe, and an npm shim's script goes in
- * front of the arguments. darwin and linux get the name as given and the
- * options as given, which is what execFile got before, byte for byte.
+ * front of the arguments, with no console window (windowsHide): Tars is a
+ * GUI program, and each CLI started from it would flash one. darwin and linux
+ * get the name as given and the options as given, which is what execFile got
+ * before, byte for byte.
  *
  * The environment (cliEnv), the MCP stdio command (stdioServerCommand,
  * nodeServerCommand) and the Windows lookup (windowsCliFile, findWindowsCli,
@@ -55,6 +56,7 @@ function prepare<O extends { env?: NodeJS.ProcessEnv }>(name: string, args: read
   const platform = process.platform;
   const env = options.env ?? (cliEnv(platform) as NodeJS.ProcessEnv | undefined);
   const invocation = cliInvocation(name, args, env ?? process.env, platform);
+  if (platform === 'win32') return { ...invocation, options: { ...options, env, windowsHide: true } };
   return { ...invocation, options: env === options.env ? options : { ...options, env } };
 }
 

@@ -6,7 +6,8 @@ import { execFileSync } from 'node:child_process';
 import { posixWords, PosixWordsError } from '../../../electron/platform/posix-words';
 
 /**
- * The provider's POSIX command line, read back into argv (decision D2, B1).
+ * The provider's POSIX command line, read back into argv, to start the CLI
+ * without a shell on Windows.
  *
  * The grammar is closed, pinned by what the 20 providers emit (read on
  * 2026-09-25 from every buildInteractiveCommand and the helpers in

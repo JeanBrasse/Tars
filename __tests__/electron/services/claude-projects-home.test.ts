@@ -8,7 +8,7 @@ import { getClaudeProjects } from '../../../electron/services/claude-service';
 
 /**
  * The Projects page (getClaudeProjects) never offers the home as a project
- * (win-reviewer's gate, 2026-09-25).
+ * (found at review, 2026-09-25).
  *
  * It skipped the home with `decodedPath === os.homedir()`. Claude Code names
  * its folder from the cwd as typed, and a cwd typed with a lowercase drive (a
