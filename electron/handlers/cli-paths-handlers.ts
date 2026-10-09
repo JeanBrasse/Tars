@@ -404,7 +404,7 @@ const WINDOWS_CLI_NAMES: Array<[keyof DetectedPaths, string]> = [
 ];
 
 /**
- * detectCLIPaths on Windows (audit B/C-01..C-04). The PATH is the process's
+ * detectCLIPaths on Windows, where there is no `which`. The PATH is the process's
  * own (Windows has no login shell whose rc files add to it), read under
  * whatever spelling it has. Each CLI is looked up in Node, PATHEXT and all:
  * first where Windows installers put it, then along the PATH. A file must be

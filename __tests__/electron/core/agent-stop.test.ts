@@ -93,7 +93,7 @@ function runningAgent(ptyId?: string): AgentStatus {
 
 // 1, 3, 4 and 8 run a bash process group and a reparented perl, read through
 // ps: POSIX only. On Windows a stop ends the ConPTY console through killPty
-// (pty-kill.test.ts); its whole tree is not read there yet (WINDOWS-PORT.md).
+// (pty-kill.test.ts); its whole tree is not read there yet.
 const posixGroups = it.skipIf(process.platform === 'win32');
 
 describe('stopping an agent', () => {

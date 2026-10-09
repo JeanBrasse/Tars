@@ -27,8 +27,8 @@ const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean; e
 /**
  * The name every agent terminal is given. node-pty on Windows answers it when
  * asked what runs in the terminal, whatever does (lib/windowsTerminal.js
- * returns `opts.name`; measured by the Windows port's audit, A6): it cannot
- * see the foreground process there.
+ * returns `opts.name`, measured on Windows 11): it cannot see the foreground
+ * process there.
  */
 const TERMINAL_NAME = 'xterm-256color';
 

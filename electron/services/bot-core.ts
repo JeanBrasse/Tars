@@ -236,7 +236,7 @@ async function typeLaunch(
   from: BotChannel, handedOver: string,
 ): Promise<void> {
   // darwin/linux: typed once the shell is at its prompt. win32 types
-  // nothing, the CLI replaces the shell (decision D2): no prompt to wait for.
+  // nothing, the CLI replaces the shell: no prompt to wait for.
   if (launch.platform !== 'win32') await shellReady(ptyProcess);
   // Work handed over, for the task its first turn opens (task-ledger.ts).
   noteHandOff(agent.id, { ...handOffFrom({ kind: 'channel', channel: from }), text: handedOver });

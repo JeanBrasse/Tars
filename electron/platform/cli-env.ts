@@ -5,8 +5,8 @@ import { buildFullPath } from '../utils/path-builder';
 
 /**
  * The environment a CLI runs in outside an agent's PTY, and the command a
- * CLI's MCP config gets for a stdio server (audit A18, B/M-01). Moved here
- * from providers/cli-exec.ts, unchanged.
+ * CLI's MCP config gets for a stdio server, on Windows the one that CLI can
+ * spawn. providers/cli-exec.ts re-exports them.
  */
 
 /**

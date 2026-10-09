@@ -3,13 +3,11 @@ import * as path from 'node:path';
 import ts from 'typescript';
 
 /**
- * Every terminal the main process ends goes through killPty (audit A22,
- * matrix row 17).
+ * Every terminal the main process ends goes through killPty.
  *
  * electron/core/pty-kill.ts ends a node-pty terminal without node-pty's
- * `AttachConsole failed` on Windows; e2e/pty-kill.spec.ts proves the kill
- * sites that exist today go through it, in the real app. This is the guard
- * for the next one: a `pty.kill()` written anywhere else brings the failure
+ * `AttachConsole failed` on Windows. This is the guard for every kill site,
+ * today's and the next one: a `pty.kill()` written anywhere else brings the failure
  * back, on Windows only, where nobody writing it on a Mac would see it.
  *
  * How it can fail (2026-09-25; the E2E spec came first and was seen red on

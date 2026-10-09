@@ -8,8 +8,7 @@ import {
 } from '../platform';
 
 /**
- * How Tars runs a CLI outside an agent's PTY, and finds one on Windows
- * (audit A11, A18, A24, B/C-01..C-05, B/M-01).
+ * How Tars runs a CLI outside an agent's PTY, and finds one on Windows.
  *
  * Registering an MCP server (`claude mcp add`, `codex mcp add`, ...), asking
  * `claude mcp list`, the kanban's one-shot `claude -p`, `gws auth status`:

@@ -849,7 +849,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     });
 
     // How the command starts (platform/launch.ts): typed into the shell on
-    // darwin and linux, the CLI in the shell's place on win32 (decision D2).
+    // darwin and linux, the CLI in the shell's place on win32.
     // Worked out before the status says it runs: a CLI Windows cannot start,
     // or a shell it may not replace, leaves the agent as it was.
     const start = toLaunch(command, agent.worktreePath || agent.projectPath, agentPtyEnv(ptyProcess) ?? process.env);

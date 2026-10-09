@@ -4,8 +4,7 @@ import * as path from 'path';
 import type { IPty } from 'node-pty';
 
 /**
- * Ends a terminal without node-pty's `AttachConsole failed` (audit A22,
- * matrix row 17).
+ * Ends a terminal without node-pty's `AttachConsole failed`.
  *
  * node-pty 1.1 ends a ConPTY terminal (WindowsPtyAgent.kill, inbox ConPTY)
  * by forking lib/conpty_console_list_agent.js with the shell's pid, to list
@@ -19,7 +18,7 @@ import type { IPty } from 'node-pty';
  * pid anyway, a pid Windows released when that shell exited and may have
  * handed to another process since. Here the helper's throw reached stderr
  * only; openai/codex#25272 reports it as an error dialog in an Electron app,
- * which is the failure the audit (A22) was reproduced from.
+ * which is how it reaches a user.
  *
  * So on win32, before kill() asks for that list, the terminal's agent is
  * given a list of its own: none once the shell has exited (there is no
@@ -98,7 +97,7 @@ function listConsoleSafely(pty: IPty, deps: PtyKillDeps): void {
 }
 
 /**
- * The end of a quit that ended terminals (win-qa, 2026-09-27).
+ * The end of a quit that ended terminals.
  *
  * Killing a ConPTY terminal closes its pseudo console, and its shell exits a
  * moment later: 125 ms idle, seconds on a busy machine. node-pty waits for that

@@ -1012,11 +1012,10 @@ export function cliStartRefusal(
 
 /**
  * Start an agent's CLI as its terminal's own process, where darwin and linux
- * type the launch line into the shell waiting there (decision D2, win32).
+ * type the launch line into the shell waiting there (win32).
  *
  * Nothing is typed on Windows: a line typed into PowerShell runs each line of
- * a multi-line prompt as a command (audit A4, proved), and PowerShell 5.1 has
- * no `&&`. So the waiting shell is killed and the terminal opened again
+ * a multi-line prompt as a command, and PowerShell 5.1 has no `&&`. So the waiting shell is killed and the terminal opened again
  * through initAgentPty, the one function that spawns an agent's terminal,
  * with the CLI as its process, in the launch's folder and environment.
  * Refused, with the shell left alone, when cliStartRefusal says so.
@@ -1112,7 +1111,7 @@ async function initAgentPtyLocked(
   return ptyId;
 }
 
-/** The CLI as the terminal's process, with the launch's folder and environment (win32, decision D2). */
+/** The CLI as the terminal's process, with the launch's folder and environment (win32: nothing is typed into a shell). */
 function spawnCli(agent: AgentStatus, launch: DirectLaunch): { ptyProcess: pty.IPty; cwd: string } {
   ensureProjectTrusted(launch.cwd);
   console.log(`Starting the CLI of agent ${agent.id} in ${launch.cwd}: ${launch.file}`);

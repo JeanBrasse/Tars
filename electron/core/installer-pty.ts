@@ -5,9 +5,8 @@ import { toLaunch, LaunchError, type DirectLaunch, type Env } from '../platform'
 import { refuseWhileQuitting } from './quit-state';
 
 /**
- * The skill and plugin installers on Windows (decision D2, audit A5, B/A-06,
- * B/A-07): each program started by its argv in the terminal the renderer
- * shows, never through a shell. On darwin and linux these do nothing and the
+ * The skill and plugin installers on Windows: each program started by its
+ * argv in the terminal the renderer shows, never through a shell. On darwin and linux these do nothing and the
  * handlers in ipc-handlers.ts run as they always have.
  *
  * Why no shell there: `npx` is npx.cmd, which ConPTY cannot start by name;

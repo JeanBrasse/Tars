@@ -315,7 +315,7 @@ async function spawnAgentSession(
   // shell. The provider builds one simple command, the quoted binary and its
   // arguments, which is what exec needs; a test holds every provider to it.
   // win32: that command read back into argv and the CLI started as the
-  // terminal's process, with no shell (platform/launch.ts, decision D2).
+  // terminal's process, with no shell (platform/launch.ts).
   // Worked out before anything is killed: a CLI Windows cannot start as it
   // is configured is said to the caller, as a provider that refuses its
   // configuration is above, and the agent keeps its terminal and session.
