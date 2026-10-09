@@ -937,7 +937,7 @@ The token is kept in `~/.tars-private/sentry-token` (`0600`), not in `app-settin
 | Renderer | `ELECTRON_BUILD=1 next build` with `src/app/api` and `src/app/icon.tsx` moved aside behind an `EXIT` trap, output to `out/` |
 | MCP servers | each `mcp-*` bundled by its own esbuild from `src/index.ts`, `mcp-shared/` included (`tsc` only checks the types), shipped as `extraResources` filtered to `package.json` + `dist/bundle.js` |
 | asarUnpack | `out/`, `hooks/`, `electron/resources/`, `better-sqlite3`, `node-pty` |
-| Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized via `@electron/notarize`. Windows x64: a per-user NSIS installer (`Tars-Setup-<version>.exe`, no elevation, `%LOCALAPPDATA%ProgramsTars`) and a zip, icon `build/icon.ico` drawn from `public/icon.svg` by `scripts/make-app-ico.mjs`, not signed, built on Windows by `npm run release:win` (`scripts/release-win.mjs`) |
+| Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized via `@electron/notarize`. Windows x64: a per-user NSIS installer (`Tars-Setup-<version>.exe`, no elevation, `%LOCALAPPDATA%\Programs\tars`) and a zip, icon `build/icon.ico` drawn from `public/icon.svg` by `scripts/make-app-ico.mjs`, not signed, built on Windows by `npm run release:win` (`scripts/release-win.mjs`) |
 | Updates | `electron-updater` against `cooper-labs-tech/Tars` releases, on both platforms: one release carries `latest-mac.yml` and the macOS files, then `latest.yml` and the Windows files, added to it by `npm run release:win` |
 | Electron | 44.4 (Node 24.21, ABI 149, Chromium 152). Its `LSMinimumSystemVersion` is 13.0, so the app needs macOS 13 or later; on Windows, 10 or later |
 | Node | ≥22.12, Electron's own floor; `.nvmrc` pins 22 |

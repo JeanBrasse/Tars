@@ -297,6 +297,14 @@ were recorded in. `desktop-shell.win32.spec.ts` and `quit-time.win32.spec.ts` ru
 only: they drive the title bar, the tray, the keys, a second launch and a quit with real OS
 input through `e2e/win32-desktop.ps1`, which needs the window wholly on the screen.
 
+**Refreshing the Windows references.** They are recorded on Windows, never on a Mac. A design
+change that moves a surface turns its Windows picture red in the `e2e` job of `ci-windows.yml`
+as it turns the macOS one red locally. Either take the new pictures from that run: download
+its `e2e-runs-windows` artifact, look at each `<name>-diff.png`, and copy `<name>-actual.png`
+over `e2e/__screenshots__/win32/<name>.png` for the surfaces the change was meant to move. Or,
+on a Windows machine, run `npm run e2e:update` (with `npx tsc -p electron/tsconfig.json` first)
+and review `git diff --stat e2e/__screenshots__/win32/` as below.
+
 The manifest is `e2e/surfaces.mjs`: **18 pages + 18 settings sections + 3 overlays = 39
 surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms that
 their own spec photographs.
@@ -383,13 +391,16 @@ three tries when it has to download: GitHub answered that download 500 or 503 tw
 build. The macOS E2E suite needs a display and a Mac; run it locally before you merge anything
 visual.
 
-`.github/workflows/ci-windows.yml` runs on the same events on `windows-latest`, Node 22: both
-`tsc`, `npm run lint`, `npm run lint:design`, `npm run check:dashes`, `npm run e2e:guard` and
-`npm test`, then, once those pass, the E2E suite (`npx playwright test`) against
-`e2e/__screenshots__/win32/`, on a display set to 1920x1080 first
-(`.github/scripts/display-resolution.ps1`) and with `E2E_TRACE=on`. When it fails, the
-Playwright report and the run directories are uploaded with the run. The `test-windows` job of
-`ci.yml` runs the same `npm test` without blocking.
+**Windows is measured, not gated**, the way the `test-windows` job of `ci.yml` runs `npm test`
+on `windows-latest` without blocking, until every Windows failure is understood.
+`.github/workflows/ci-windows.yml` adds two jobs on the same events, both `continue-on-error`,
+each run whatever the other did: `checks` (both `tsc`, `npm run lint`, `npm run lint:design`,
+`npm run check:dashes`, `npm run e2e:guard`, each run even when one before it failed) and `e2e`
+(`npx playwright test` against `e2e/__screenshots__/win32/`, on a display set to 1920x1080
+first by `.github/scripts/display-resolution.ps1`, with `E2E_TRACE=on`). `npm test` runs once on
+Windows, in `test-windows`. A red Windows job shows in the run and fails nothing; read it as a
+finding, as the Linux job is read. When the E2E job fails, the Playwright report and the run
+directories are uploaded with the run (`playwright-report-windows`, `e2e-runs-windows`).
 
 **It runs, and it is the only check made on Linux.** Measured on 2026-09-17, it had never run:
 Actions stay off on a fork until somebody enables them. They are on now, and
@@ -661,7 +672,8 @@ nothing moves or prunes it.
 releases can ship code to every Windows install. Keep the accounts and tokens with write access
 to the repository few, with 2FA.
 
-The installer (`build.nsis`) is per user: no elevation, `%LOCALAPPDATA%\Programs\Tars`, Start
+The installer (`build.nsis`) is per user: no elevation, `%LOCALAPPDATA%\Programs\tars` (a
+one-click per-user install is named after the package, `tars`, not the product), Start
 menu and desktop shortcuts, user data kept on uninstall. To try one without touching your own
 install:
 
