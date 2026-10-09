@@ -52,6 +52,16 @@ describe('finding the transcript', () => {
     expect(encodeProjectDirName('/Users/you/docs.octav.fi')).toBe('-Users-you-docs-octav-fi');
   });
 
+  it('on Windows, names the folder as Claude does there; elsewhere, as before', () => {
+    // Claude turns every character that is not a letter or a digit into a
+    // dash: the drive's colon and every backslash too. The old rule kept them,
+    // and named a folder Claude never writes.
+    expect(encodeProjectDirName('C:\\Users\\you\\my project.x', 'win32')).toBe('C--Users-you-my-project-x');
+    // darwin/linux: `/` and `.` alone, as Tars always read transcripts there.
+    expect(encodeProjectDirName('/Users/you/my project.x', 'darwin')).toBe('-Users-you-my project-x');
+    expect(encodeProjectDirName('/home/you/my_project', 'linux')).toBe('-home-you-my_project');
+  });
+
   it('resumes when the transcript is on disk', () => {
     writeTranscript(PROJECT, SESSION);
     expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe(SESSION);
@@ -205,7 +215,9 @@ describe('a project reached through a symlink', () => {
   beforeEach(() => {
     real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-real-')));
     link = path.join(home, `project-link-${path.basename(real)}`);
-    fs.symlinkSync(real, link);
+    // A junction: a link to a directory that Windows lets any account make
+    // (Developer Mode off, decision D4); the type is ignored off Windows.
+    fs.symlinkSync(real, link, 'junction');
   });
 
   it('finds the transcript claude filed under the real path', () => {
@@ -228,7 +240,7 @@ describe('a project reached through a symlink', () => {
   it('resolves a worktree reached through a symlink too', () => {
     const worktreeReal = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-worktree-')));
     const worktreeLink = path.join(home, `worktree-link-${path.basename(worktreeReal)}`);
-    fs.symlinkSync(worktreeReal, worktreeLink);
+    fs.symlinkSync(worktreeReal, worktreeLink, 'junction');
     writeTranscript(worktreeReal, SESSION);
     expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: link, worktreePath: worktreeLink }, home)).toBe(SESSION);
   });

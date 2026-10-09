@@ -6,8 +6,24 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { buildFullPath } from '../utils/path-builder';
 import type { AppSettings } from '../types';
+import { joinPathEntries, withPath } from '../platform';
+import {
+  CliNotRunnableError, execCli, findWindowsCli, stdioServerCommand, windowsCliDirs, windowsGcloudDirs, type CliLookup,
+} from '../providers/cli-exec';
 
 const execAsync = promisify(exec);
+
+/**
+ * gws or gcloud on Windows: looked up in Node, PATHEXT and all, where Windows
+ * installs them and then along the PATH, never through `which` (there is none)
+ * nor as the extensionless sh shim npm writes beside gws.cmd. gcloud is the
+ * Cloud SDK's gcloud.cmd, which gws starts, not Tars: it only has to be there.
+ */
+function findOnWindows(name: string, dirs: string[], lookup: CliLookup): string {
+  const found = findWindowsCli(name, dirs, process.env, lookup);
+  for (const r of found.rejected) console.warn(`[gws] ${name}: ${r.path ?? r.name} not used (${r.reason}): ${r.detail}`);
+  return found.path ?? '';
+}
 
 // Scope patterns → friendly service names
 const SCOPE_SERVICE_MAP: Record<string, string> = {
@@ -76,6 +92,7 @@ function deriveServicesFromScopes(scopes: string[]): Record<string, ServiceAcces
 }
 
 async function findGwsBinary(): Promise<string> {
+  if (process.platform === 'win32') return findOnWindows('gws', windowsCliDirs(process.env), 'startable');
   const homeDir = os.homedir();
   const commonPaths = [
     '/opt/homebrew/bin',
@@ -116,6 +133,9 @@ async function findGwsBinary(): Promise<string> {
 }
 
 async function findGcloudBinary(): Promise<string> {
+  if (process.platform === 'win32') {
+    return findOnWindows('gcloud', [...windowsGcloudDirs(process.env), ...windowsCliDirs(process.env)], 'present');
+  }
   const homeDir = os.homedir();
   const commonPaths = [
     '/opt/homebrew/bin',
@@ -178,12 +198,16 @@ export function registerGwsHandlers(deps: GwsHandlerDependencies): void {
       // Include gcloud's directory in PATH so gws can find it
       const gcloudPath = await findGcloudBinary();
       const gcloudDir = gcloudPath ? path.dirname(gcloudPath) : '';
-      const fullPath = [gcloudDir, buildFullPath()].filter(Boolean).join(':');
+      const fullPath = joinPathEntries([gcloudDir, buildFullPath()].filter(Boolean), process.platform);
 
-      const { stdout } = await execAsync(`"${gwsPath}" auth status --json`, {
-        env: { ...process.env, PATH: fullPath },
-        timeout: 10000,
-      });
+      const env = withPath(process.env, fullPath, process.platform) as NodeJS.ProcessEnv;
+
+      // win32: an argv, never a line for cmd.exe, which would read a `"`, `&`
+      // or %VAR% in the path; execCli resolves an npm gws.cmd to node and its
+      // script. darwin/linux: the line /bin/sh has always run.
+      const { stdout } = process.platform === 'win32'
+        ? await execCli(gwsPath, ['auth', 'status', '--json'], { env, timeout: 10000, encoding: 'utf-8' })
+        : await execAsync(`"${gwsPath}" auth status --json`, { env, timeout: 10000 });
 
       const data = JSON.parse(stdout.trim());
       // Real gws auth status output:
@@ -194,8 +218,10 @@ export function registerGwsHandlers(deps: GwsHandlerDependencies): void {
       result.scopes = data.scopes ?? [];
       result.authMethod = data.auth_method ?? data.authMethod ?? (result.authenticated ? 'oauth2' : 'none');
       result.services = deriveServicesFromScopes(result.scopes);
-    } catch {
-      // gws auth status failed. Return defaults.
+    } catch (err) {
+      // gws auth status failed (not signed in, output not JSON). Return
+      // defaults; a gws that cannot even be started is said.
+      if (err instanceof CliNotRunnableError) console.warn(`[gws] auth status not run: ${err.message}`);
     }
 
     return result;
@@ -216,10 +242,14 @@ export function registerGwsHandlers(deps: GwsHandlerDependencies): void {
       const svc = services || DEFAULT_MCP_SERVICES;
       const { getAllProviders } = await import('../providers');
       const providers = getAllProviders();
+      // What each CLI will start: on Windows an npm gws.cmd, which no CLI's
+      // spawn can start, is written as node.exe and its script.
+      const server = stdioServerCommand(gwsPath, ['mcp', '-s', svc]);
+      if (server.unresolved) console.warn(`[gws] ${gwsPath} not resolved (${server.unresolved.reason}): ${server.unresolved.detail}`);
 
       for (const provider of providers) {
         try {
-          await provider.registerMcpServer('google-workspace', gwsPath, ['mcp', '-s', svc]);
+          await provider.registerMcpServer('google-workspace', server.command, server.args);
         } catch (err) {
           console.error(`[${provider.id}] Failed to register gws MCP:`, err);
         }
@@ -257,11 +287,15 @@ export function registerGwsHandlers(deps: GwsHandlerDependencies): void {
       const gwsPath = await findGwsBinary();
       const { getAllProviders } = await import('../providers');
       const providers = getAllProviders();
+      // Asked for what gws:setup wrote: on Windows the script (or the exe) an
+      // npm gws.cmd starts, not the .cmd. darwin/linux: the path found.
+      const server = stdioServerCommand(gwsPath || '', []);
+      const registeredAs = server.args[0] ?? server.command;
 
       let configured = false;
       for (const provider of providers) {
         try {
-          if (provider.isMcpServerRegistered('google-workspace', gwsPath || '')) {
+          if (provider.isMcpServerRegistered('google-workspace', registeredAs)) {
             configured = true;
             break;
           }

@@ -15,7 +15,8 @@ import type { OrphanFolder } from '../../src/types/electron';
  *    the disk with one ("81 GB" in the frame);
  * 2. one folder reads as many: "1 folders", "remove 1 folders";
  * 3. a folder is named by its absolute path, the home in it, where the frame
- *    names it by its project and its place under .worktrees;
+ *    names it by its project and its place under .worktrees; a project
+ *    Windows wrote too, whose separator is `\` (the same for 9);
  * 4. a name hides, turns or breaks the line: a folder under .worktrees is
  *    named by whatever made it, an agent among them;
  * 5. a last change that is unknown or does not parse reads "NaN months", and
@@ -70,6 +71,12 @@ describe('a folder\'s row', () => {
   it('names it by its project and its place under .worktrees, never by its path (3)', () => {
     expect(folderLabel(folder())).toBe('tars-hermes/.worktrees/feat-relay-retry');
     expect(folderLabel(folder({ name: 'feat/live' }))).toBe('tars-hermes/.worktrees/feat/live');
+  });
+
+  it('names a project Windows wrote by its folder too, never by its path (3)', () => {
+    const project = 'C:\\Users\\you\\projects\\tars-hermes';
+    expect(folderLabel(folder({ project }))).toBe('tars-hermes/.worktrees/feat-relay-retry');
+    expect(folderLabel(folder({ project: `${project}\\` }))).toBe('tars-hermes/.worktrees/feat-relay-retry');
   });
 
   it('flattens what hides, turns or breaks the line (4)', () => {
@@ -157,6 +164,10 @@ describe('a project git could not list (9)', () => {
     expect(unreadLine([api, web])).toBe('Git could not list the worktrees of api-server and web, so Tars cannot say which of their folders no agent owns.');
     expect(unreadLine([api, web, '/Users/you/projects/tars-hermes'])).toBe('Git could not list the worktrees of api-server, web and tars-hermes, so Tars cannot say which of their folders no agent owns.');
     expect(unreadLine([])).toBeNull();
+  });
+
+  it('names a project Windows wrote by its folder too, never by its path', () => {
+    expect(unreadLine(['C:\\Users\\you\\projects\\api-server'])).toBe('Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.');
   });
 
   it('flattens what hides, turns or breaks the line', () => {

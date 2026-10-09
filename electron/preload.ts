@@ -876,6 +876,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // The Windows desktop shell: the shells Settings > Terminal offers, and the
+  // title bar's colours when the theme changes.
+  desktopShell: {
+    detectShells: () => ipcRenderer.invoke('desktop:detectShells'),
+    setTitleBarOverlay: (colours: { color: string; symbolColor: string }) =>
+      ipcRenderer.invoke('desktop:setTitleBarOverlay', colours),
+  },
+
   // Platform info
   platform: process.platform,
 });

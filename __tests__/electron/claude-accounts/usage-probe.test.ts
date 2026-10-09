@@ -59,6 +59,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { parseUsageAnswer, probeUsage, usageProbeEnv, recordProbe, resetProbes } from '../../../electron/services/claude-accounts/usage-probe';
 import { readAccountUsage, countersDir } from '../../../electron/services/claude-accounts/counters';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 
 const NOW = Date.UTC(2026, 9, 4, 19, 37, 0);
 const S = (ms: number) => Math.floor(ms / 1000);
@@ -153,7 +154,10 @@ function startedIn(dir: string): number[] {
   });
 }
 
-describe('a probe of the real protocol, against a stand-in claude', () => {
+// The probe runs only while the accounts are on, which a Windows build never
+// is (D17): there it would start claude by its bare name, as the sign-in does.
+// The stand-in is an extensionless script, and ps finds what it started.
+describe.skipIf(claudeAccountsNotPorted())('a probe of the real protocol, against a stand-in claude', () => {
   let dir: string;
   beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-usage-probe-')); });
   afterEach(() => {

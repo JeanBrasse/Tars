@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createTaskLedger, turnUsageOf, type TaskAgentView } from '../../../electron/services/task-ledger';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The tasks the Usage page prices (PLAN-1.9.3.md, item 2; DESIGN-COUT-PAR-TACHE.md): one record per piece of work an
@@ -419,8 +420,10 @@ describe('where a task\'s text is kept (Noah, 05/10)', () => {
     expect(pub).toContain('"startedAt"');
     expect(pub).toContain('"sess-1"');
     expect(fs.readFileSync(textFile, 'utf-8')).toContain('merge the release branch');
-    expect(fs.statSync(textFile).mode & 0o777).toBe(0o600);
-    expect(fs.statSync(path.dirname(textFile)).mode & 0o777).toBe(0o700);
+    if (hasPosixModes()) {
+      expect(fs.statSync(textFile).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(path.dirname(textFile)).mode & 0o777).toBe(0o700);
+    }
     expect(ledger.tasks()[0].text).toBe('merge the release branch, the Hermes key is in the vault');
   });
 
@@ -457,7 +460,7 @@ describe('where a task\'s text is kept (Noah, 05/10)', () => {
     expect(kept.length).toBeGreaterThan(10);
     expect(kept.every((t) => /^task number \d+$/.test(t.text))).toBe(true);
     expect(fs.readFileSync(textFile, 'utf-8')).not.toContain('"task number 0"');
-    expect(fs.statSync(textFile).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(textFile).mode & 0o777).toBe(0o600);
   });
 
   it('16. a text line that is not one is skipped, and a long one cut to 200 characters', () => {

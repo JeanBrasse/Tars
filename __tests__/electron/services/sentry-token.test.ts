@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { SENTRY_TOKEN_FILE, sentryTokenOutOf, settingsToSave } from '../../../electron/services/sentry-token';
 import { APP_SETTINGS_FILE, DATA_DIR } from '../../../electron/constants';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The Sentry token, out of agents' reach (the Audit's #242 and #292 gates): it reads Noah's Sentry organisation, user
@@ -43,7 +44,7 @@ describe('the Sentry token', () => {
 
     expect(toSave).toEqual({ telegramChatId: '42', errorReportsEnabled: true });
     expect(fs.readFileSync(SENTRY_TOKEN_FILE, 'utf-8')).toBe('sntryu_one');
-    expect(fs.statSync(SENTRY_TOKEN_FILE).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(SENTRY_TOKEN_FILE).mode & 0o777).toBe(0o600);
   });
 
   it('2, 6, 7. one saved before moves out at the first start, and the settings in memory still carry it', () => {
@@ -54,7 +55,7 @@ describe('the Sentry token', () => {
     expect(loaded).toEqual({ sentryAuthToken: 'sntryu_old', telegramChatId: '42' });
     expect(saved()).toEqual({ telegramChatId: '42' });
     expect(fs.readFileSync(SENTRY_TOKEN_FILE, 'utf-8')).toBe('sntryu_old');
-    expect(fs.statSync(SENTRY_TOKEN_FILE).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(SENTRY_TOKEN_FILE).mode & 0o777).toBe(0o600);
   });
 
   it('3. one an older Tars wrote into app-settings.json since wins', () => {

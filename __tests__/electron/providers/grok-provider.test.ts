@@ -3,7 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+import { pinPlatform } from './win-fake-disk';
+
 let tmpDir: string;
+let unpin: () => void;
 let mockExecFileSync: ReturnType<typeof vi.fn>;
 
 vi.mock('os', async (importOriginal) => {
@@ -17,12 +20,17 @@ vi.mock('child_process', () => ({
 
 beforeEach(() => {
   vi.resetModules();
+  // The argv read below is the darwin/linux contract: the CLI's name as given.
+  // How win32 resolves the same calls (an npm .cmd shim, a .exe) is proven
+  // against a real shim in mcp-registration-cli.test.ts.
+  unpin = pinPlatform('linux');
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-prov-test-'));
   mockExecFileSync = vi.fn();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  unpin();
   if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 

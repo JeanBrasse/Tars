@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
  * Which account a Claude session ran on, written beside its provider in ~/.dorothy/token-stats.json.
@@ -24,6 +25,7 @@ let script: string;
 let home: string;
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
@@ -52,7 +54,7 @@ function render(sessionId: string, env: Record<string, string>) {
   return JSON.parse(fs.readFileSync(path.join(home, '.dorothy', 'token-stats.json'), 'utf-8'));
 }
 
-describe('the account of a session, in token-stats.json', () => {
+describe.skipIf(shHooksNotShipped())('the account of a session, in token-stats.json', () => {
   it('1, 3. a session on an account is written with it, beside its provider and its counts', () => {
     const stats = render('sess-two', { TARS_CLAUDE_ACCOUNT: '2', CLAUDE_PROVIDER: 'claude' });
 

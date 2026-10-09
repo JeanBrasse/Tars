@@ -12,8 +12,8 @@ import * as path from 'node:path';
  */
 
 const { TMP_DATA_DIR } = vi.hoisted(() => {
-  const base = (process.env.TMPDIR || '/tmp').replace(/\/$/, '');
-  return { TMP_DATA_DIR: `${base}/tars-d2-hermes-contract-${process.pid}-${Date.now()}` };
+  const base = process.getBuiltinModule('node:os').tmpdir();
+  return { TMP_DATA_DIR: process.getBuiltinModule('node:path').join(base, `tars-d2-hermes-contract-${process.pid}-${Date.now()}`) };
 });
 vi.mock('../../../../electron/constants', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../../electron/constants')>()),

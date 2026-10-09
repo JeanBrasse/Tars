@@ -17,8 +17,12 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+// A file URL's pathname is `/C:/...` on Windows and spells a space `%20`
+// everywhere: no directory had that name, every walk failed, and the check
+// said Clean over dashes it never read.
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 /** Everything shipped, plus the docs. Build output is generated, so skipped. */
 const ROOTS = [
@@ -44,6 +48,7 @@ const ALLOWED = [
 
 const DASH = /[–—]/;
 const offenders = [];
+let scanned = 0;
 
 function walk(dir) {
   let entries;
@@ -61,6 +66,7 @@ function walk(dir) {
 function scan(file) {
   let text;
   try { text = readFileSync(file, 'utf8'); } catch { return; }
+  scanned++;
   if (!DASH.test(text)) return;
   text.split('\n').forEach((line, i) => {
     if (!DASH.test(line)) return;
@@ -74,8 +80,14 @@ for (const f of FILES) scan(join(ROOT, f));
 
 const quiet = process.argv.includes('--quiet');
 
+// Nothing read is not clean: it is a root this script got wrong.
+if (scanned === 0) {
+  console.error(`No file read under ${ROOT}: nothing was checked.`);
+  process.exit(2);
+}
+
 if (offenders.length === 0) {
-  if (!quiet) console.log('No em dashes or en dashes. Clean.');
+  if (!quiet) console.log(`No em dashes or en dashes in ${scanned} files. Clean.`);
   process.exit(0);
 }
 

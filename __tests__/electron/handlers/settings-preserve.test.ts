@@ -25,7 +25,7 @@ import * as path from 'path';
 // file: a path built from a `const` up here would not exist yet when the mock
 // factory runs. Nothing touches the disk until beforeEach.
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-settings-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-settings-${process.pid}-${Date.now()}`),
 }));
 
 vi.mock('os', async (importOriginal) => {

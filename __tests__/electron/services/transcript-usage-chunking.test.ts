@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { makeUnreadable } from '../../setup/file-access';
 
 /**
  * What the slicing had to not break, and what a failed read must not look like.
@@ -22,7 +23,7 @@ import * as path from 'path';
  */
 
 const { home } = vi.hoisted(() => ({
-  home: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-usage-chunk-${process.pid}-${Date.now()}`,
+  home: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-usage-chunk-${process.pid}-${Date.now()}`),
 }));
 
 vi.mock('os', async (importOriginal) => {
@@ -150,16 +151,18 @@ describe('a character that lands across a read boundary', () => {
 });
 
 describe('a transcript that will not open', () => {
-  /** A file the process cannot read, which is what a failed read really is. */
-  function unreadableFile(name: string): string {
+  /**
+   * A file the process cannot read, which is what a failed read really is,
+   * and what makes it readable again (mode 0600, where there are modes).
+   */
+  function unreadableFile(name: string): () => void {
     const file = writeLines(name, [JSON.stringify(assistant('msg_x', 'req_x'))]);
-    fs.chmodSync(file, 0o000);
-    return file;
+    return makeUnreadable(file, 0o600);
   }
 
   it('is counted rather than passed off as a transcript holding nothing', async () => {
     writeLines('good.jsonl', [JSON.stringify(assistant('msg_1', 'req_1'))]);
-    const blocked = unreadableFile('blocked.jsonl');
+    const readable = unreadableFile('blocked.jsonl');
 
     const { computeTranscriptUsage } = await load();
     const usage = await computeTranscriptUsage(home);
@@ -169,12 +172,12 @@ describe('a transcript that will not open', () => {
     expect(usage.modelUsage['claude-opus-5'].inputTokens).toBe(1000);
     expect(usage.unreadable).toBe(1);
 
-    fs.chmodSync(blocked, 0o600);
+    readable();
   });
 
   it('is not remembered as empty, so the next pass can still read it', async () => {
     writeLines('good.jsonl', [JSON.stringify(assistant('msg_1', 'req_1'))]);
-    const blocked = unreadableFile('blocked.jsonl');
+    const readable = unreadableFile('blocked.jsonl');
 
     const { computeTranscriptUsage } = await load();
     await computeTranscriptUsage(home);
@@ -188,7 +191,7 @@ describe('a transcript that will not open', () => {
     try {
       // Readable again, with nothing about the file itself changed: same
       // mtime, same size, so a remembered failure would still be served.
-      fs.chmodSync(blocked, 0o600);
+      readable();
       const second = await computeTranscriptUsage(home);
 
       expect(second.unreadable).toBe(0);
@@ -200,7 +203,7 @@ describe('a transcript that will not open', () => {
 
   it('reaches the figure the page and both bots read', async () => {
     writeLines('good.jsonl', [JSON.stringify(assistant('msg_1', 'req_1'))]);
-    const blocked = unreadableFile('blocked.jsonl');
+    const readable = unreadableFile('blocked.jsonl');
 
     vi.resetModules();
     const { getClaudeStats } = await import('../../../electron/services/claude-service');
@@ -211,6 +214,6 @@ describe('a transcript that will not open', () => {
     // exist can only say so if the count travels this far.
     expect(stats?.unreadable).toBe(1);
 
-    fs.chmodSync(blocked, 0o600);
+    readable();
   });
 });

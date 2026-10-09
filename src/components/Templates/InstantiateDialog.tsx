@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import type { AgentTemplate } from '@/types/electron';
 import { useElectronAgents, useElectronFS } from '@/hooks/useElectron';
 import { Button, DialogShell, Dropdown, Input, Label } from '@/components/ui';
@@ -43,7 +44,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
   const projectOptions = useMemo<DropdownOption[]>(() => {
     const options = projects.map(p => ({ value: p.path, label: p.name }));
     if (projectPath && !projects.some(p => p.path === projectPath)) {
-      options.unshift({ value: projectPath, label: projectPath.split('/').pop() || projectPath });
+      options.unshift({ value: projectPath, label: lastPathPart(projectPath) || projectPath });
     }
     return options;
   }, [projects, projectPath]);

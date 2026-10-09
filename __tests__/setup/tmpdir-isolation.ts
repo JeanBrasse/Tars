@@ -38,19 +38,39 @@ import * as path from 'node:path';
 const VARIABLES = ['TMPDIR', 'TMP', 'TEMP'] as const;
 /** Read by tmpdir-run.ts. */
 const MARK = 'tars-vitest-hooks-ran';
+/**
+ * Read by home-isolation.ts: the run's folder, which holds this file's. On
+ * Windows the temp dir lies inside the account's home, and that guard lets
+ * the temp dir through: the run's folder, not only this file's, or a write
+ * past the file's folder reads as a write into the real home there, and the
+ * run's own guard never gets to see it (tmpdir-isolation.test.ts, 7).
+ */
+const RUN_FOLDER = Symbol.for('tars.test.runTmpdir');
 
 const before = Object.fromEntries(VARIABLES.map(name => [name, process.env[name]]));
-const own = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-file-'));
+const run = os.tmpdir();
+(globalThis as typeof globalThis & { [RUN_FOLDER]?: string })[RUN_FOLDER] = run;
+const own = fs.mkdtempSync(path.join(run, 'tars-vitest-file-'));
 for (const name of VARIABLES) process.env[name] = own;
 
 beforeAll(() => {
   fs.writeFileSync(path.join(own, MARK), '');
 });
 
-afterAll(() => {
+afterAll(async () => {
   for (const name of VARIABLES) {
     if (before[name] === undefined) delete process.env[name];
     else process.env[name] = before[name];
   }
-  fs.rmSync(own, { recursive: true, force: true });
+  // Retried, and not synchronously: Windows refuses to remove a folder that a
+  // process still has as its working directory, and a test's agent is often
+  // still being ended when the file ends (AcpSession.stop starts a taskkill
+  // and does not wait for it, as it does not wait for its signals on macOS
+  // and Linux).
+  // rmSync does not retry that refusal at all (EBUSY on a folder's first
+  // rmdir: measured on Node 22.23, it failed after 1 ms with the holder
+  // alive); fs.promises.rm retries the whole removal, here for at most 5.5 s,
+  // under vitest's 10 s for a hook. A process that is never ended still fails
+  // the file.
+  await fs.promises.rm(own, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });

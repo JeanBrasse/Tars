@@ -162,7 +162,8 @@ describe('nothing reads the journal off disk while it is behind', () => {
           if (entry.name !== 'dist' && entry.name !== 'node_modules') walk(full);
         } else if (/\.(ts|tsx|mjs|js)$/.test(entry.name)) {
           const text = fs.readFileSync(full, 'utf-8');
-          if (/BUS_FILE|['"`]bus\.json['"`]/.test(text)) mentions.push(path.relative(process.cwd(), full));
+          // Spelled with `/` on every platform, as the list below is.
+          if (/BUS_FILE|['"`]bus\.json['"`]/.test(text)) mentions.push(path.relative(process.cwd(), full).split(path.sep).join('/'));
         }
       }
     };

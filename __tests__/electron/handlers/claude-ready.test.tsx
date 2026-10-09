@@ -43,12 +43,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 type Fake = { stdout: string; code: number };
 
+// The file a claude is on disk: Windows finds a program by its extension
+// (platform/cli-binary.ts resolves claude to claude.exe or claude.cmd).
+const CLAUDE_FILE = process.platform === 'win32' ? 'claude.exe' : 'claude';
+
 /** The claude a spawn of `file` would run: a path as it is, a bare name on PATH. */
 function lookup(file: string, pathValue: string | undefined): Fake | 'missing' {
   if (file !== 'claude') return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) as Fake : 'missing';
   for (const dir of (pathValue ?? '').split(path.delimiter)) {
     if (!dir) continue;
-    const file = path.join(dir, 'claude');
+    const file = path.join(dir, CLAUDE_FILE);
     if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8')) as Fake;
   }
   return 'missing';
@@ -60,7 +64,7 @@ function failure(found: Fake | 'missing'): Error {
 }
 
 const isClaudeVersion = (file: string, args: unknown) =>
-  path.basename(file) === 'claude' && Array.isArray(args) && args.length === 1 && args[0] === '--version';
+  path.basename(file).replace(/\.(exe|cmd)$/i, '') === 'claude' && Array.isArray(args) && args.length === 1 && args[0] === '--version';
 
 vi.mock('child_process', async (importOriginal) => {
   const real = await importOriginal<typeof import('child_process')>();
@@ -70,7 +74,7 @@ vi.mock('child_process', async (importOriginal) => {
     if (!isClaudeVersion(file, args)) return (real.execFile as (...a: unknown[]) => unknown)(file, args, opts, cb);
     const callback = (typeof opts === 'function' ? opts : cb) as Cb;
     const env = (typeof opts === 'object' && opts && (opts as { env?: NodeJS.ProcessEnv }).env) || process.env;
-    const found = lookup(file, env.PATH);
+    const found = lookup(file, env.PATH ?? env.Path);
     setImmediate(() => {
       if (found === 'missing' || found.code !== 0) callback(failure(found));
       else callback(null, found.stdout, '');
@@ -162,7 +166,7 @@ const savedPath = process.env.PATH;
 function claudeIn(name: string, fake: Fake): string {
   const dir = path.join(root, name);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'claude'), JSON.stringify(fake));
+  fs.writeFileSync(path.join(dir, CLAUDE_FILE), JSON.stringify(fake));
   return dir;
 }
 
@@ -229,7 +233,7 @@ describe('settings:getInfo', () => {
   });
 
   it('7. finds claude through its own path in Settings > CLI Paths', async () => {
-    cliPaths = { claude: path.join(claudeIn('custom', { stdout: '2.1.303 (Claude Code)\n', code: 0 }), 'claude') };
+    cliPaths = { claude: path.join(claudeIn('custom', { stdout: '2.1.303 (Claude Code)\n', code: 0 }), CLAUDE_FILE) };
     expect((await getInfo()).claudeVersion).toBe('2.1.303 (Claude Code)');
   });
 

@@ -241,8 +241,14 @@ async function e2eAuto(cwd: string, env: Record<string, string> = {}) {
   made.push(bin);
   const calls = path.join(bin, 'calls');
   fs.writeFileSync(path.join(bin, 'npx'), `#!/bin/sh\necho "$*" >> "${calls}"\n`, { mode: 0o755 });
+  // On Windows the script runs npx as node <npm's bin>\npx-cli.js (scripts/npm-command.mjs), found
+  // through npm_execpath: the same fake, in JavaScript. macOS and Linux still take `npx` off the PATH.
+  fs.writeFileSync(path.join(bin, 'npx-cli.js'), `require('fs').appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n');\n`);
   const childEnv: NodeJS.ProcessEnv = { ...gitEnv, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
   delete childEnv.SCOPE_BASE;
+  // Every spelling: a worker can hold NPM_EXECPATH, and Windows would hand the child that one, the real npm.
+  for (const key of Object.keys(childEnv)) if (key.toLowerCase() === 'npm_execpath') delete childEnv[key];
+  childEnv.npm_execpath = path.join(bin, 'npm-cli.js');
   const { stdout, stderr } = await run(process.execPath, [SCRIPT], { cwd, env: { ...childEnv, ...env } });
   return {
     output: `${stdout}${stderr}`,

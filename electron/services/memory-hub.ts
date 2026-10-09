@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
+import { encodeClaudeProjectDir, claudeProjectDirNames } from '../platform/claude-project-dir';
 import { spellingsOf } from '../utils/resume-session';
 import { probeMcpEndpoint, callMcpTool, listMcpTools, type McpEndpoint } from './mcp-http-client';
 import {
@@ -69,14 +70,12 @@ export interface SourceStatus {
 /**
  * The folder names Claude Code may keep a project under, its real path first:
  * Claude Code files a session under the real path, and Tars hands this the
- * path it saved, which may go through a link (QA's gate of #346).
+ * path it saved, which may go through a link (QA's gate of #346). Each
+ * spelling as claudeProjectDirNames names it, which drops a name that is not
+ * one folder (a Windows path keeps its separators in the old spellings).
  */
 function candidateProjectDirs(projectPath: string): string[] {
-  return [...new Set([...spellingsOf(projectPath)].reverse().flatMap(spelling => [
-    spelling.replace(/[^a-zA-Z0-9]/g, '-'),
-    spelling.replace(/[/.]/g, '-'),
-    spelling.replace(/\//g, '-'),
-  ]))];
+  return [...new Set([...spellingsOf(projectPath)].reverse().flatMap(spelling => claudeProjectDirNames(spelling)))];
 }
 
 export function projectMemoryDir(projectPath: string): string | null {
@@ -491,7 +490,7 @@ export function writeProjectMemory(projectPath: string, content: string, file = 
 
   let dir = projectMemoryDir(projectPath);
   if (!dir) {
-    dir = path.join(CLAUDE_PROJECTS_DIR, projectPath.replace(/[^a-zA-Z0-9]/g, '-'), 'memory');
+    dir = path.join(CLAUDE_PROJECTS_DIR, encodeClaudeProjectDir(projectPath), 'memory');
   }
   try {
     fs.mkdirSync(dir, { recursive: true });

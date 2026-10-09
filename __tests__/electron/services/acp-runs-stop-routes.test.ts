@@ -14,7 +14,7 @@ import * as path from 'node:path';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-acp-stop-routes-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-acp-stop-routes-${process.pid}-${Date.now()}`),
 }));
 const serverBundle = path.join(tmpHome, 'bundle.js');
 
@@ -52,6 +52,7 @@ import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 import { EventEmitter } from 'node:events';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { Leftovers } from '../../setup/leftover-processes';
 
 fs.mkdirSync(tmpHome, { recursive: true });
 fs.writeFileSync(serverBundle, '');
@@ -132,8 +133,9 @@ async function until(what: string, test: () => boolean, ms = 10_000) {
 const ended = (result: Promise<unknown>) => Promise.race([
   result, new Promise((_, reject) => setTimeout(() => reject(new Error('the run was still working 8 s after the stop')), 8_000)),
 ]);
-const leftovers: number[] = [];
-afterEach(() => { for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } } });
+// Ended by id only while the id is still the process the test saw: see leftover-processes.ts.
+const leftovers = new Leftovers();
+afterEach(() => leftovers.end(), 60_000);
 
 /** An agent of the project running a delegated run, and the process its run started. */
 async function delegated(id: string): Promise<{ result: Promise<unknown>; work: number }> {

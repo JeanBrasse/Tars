@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { makeUnreadable } from '../../setup/file-access';
 
 /**
  * The agent list is the app's only durable record of what the user set up.
@@ -49,6 +50,10 @@ beforeEach(async () => {
 
 afterEach(() => {
   manager.stopAgentAutosave();
+});
+
+afterAll(() => {
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 describe('saveAgents', () => {
@@ -131,12 +136,12 @@ describe('the backup costs no read of the file it backs up', () => {
     // size, same mtime, same inode, so it is still the generation this
     // process wrote. A save that needs to read it back cannot keep a backup
     // here; a save that keeps the bytes it wrote does not care.
-    fs.chmodSync(AGENTS_FILE, 0o000);
+    const readable = makeUnreadable(AGENTS_FILE);
     try {
       manager.agents.set('a2', agent('a2') as never);
       manager.saveAgents();
     } finally {
-      fs.chmodSync(AGENTS_FILE, 0o644);
+      readable();
     }
 
     expect(fs.readFileSync(BACKUP_FILE, 'utf-8')).toBe(firstGeneration);

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -33,7 +33,7 @@ import * as path from 'node:path';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-launch-settings-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-launch-settings-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = {
@@ -108,6 +108,17 @@ import { resetAgentWatch, startAgentWatch, stopAgentWatch, queueBusMessage } fro
 import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks-routes';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
 
 const project = path.join(tmpHome, 'project');
 const OLD_SESSION = '4ab31f00-ce51-4676-ab80-4023cf6e3f4e';
@@ -257,8 +268,18 @@ function agentMidConversation() {
   });
 }
 
+/**
+ * The cases that resume a conversation read its transcript under Claude's
+ * folder for the project, named as darwin and linux name it (resume-session.ts:
+ * `/` and `.` to `-`). This file runs as linux on any host; on a Windows
+ * host the project is a Windows path, whose `:` and `\` no folder name can
+ * hold, so the transcript those cases resume from has nowhere to go. They run
+ * on macOS and Linux; the Windows name is held by resume-session.test.ts.
+ */
+const NO_POSIX_TRANSCRIPT_FOLDER = process.platform === 'win32';
+
 describe('a dispatch that lands while a restart launches the CLI', () => {
-  it.each([
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER).each([
     ['after the kill, while the new shell starts', 300],
     ['just after the launch was typed, before the CLI runs', 550],
   ])('waits for the CLI and goes into the resumed session (%s)', async (_when, at) => {
@@ -286,7 +307,7 @@ describe('a dispatch that lands while a restart launches the CLI', () => {
     expect(agent.ptyId).not.toBe('pty-a');
   });
 
-  it('holds a /message the same way, which the MCP send_message uses', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('holds a /message the same way, which the MCP send_message uses', async () => {
     const { agent } = agentMidConversation();
     const before = spawned.length;
 
@@ -303,7 +324,7 @@ describe('a dispatch that lands while a restart launches the CLI', () => {
     expect(typedInto(newTerminal(before))).toContain('WORD?');
   });
 
-  it('gives up on a launch whose CLI never comes up, and starts a session', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('gives up on a launch whose CLI never comes up, and starts a session', async () => {
     const { agent } = agentMidConversation();
     const before = spawned.length;
 
@@ -387,7 +408,7 @@ describe('a session started through the API, then a second message', () => {
 });
 
 describe('a launch that fails', () => {
-  it('lets the next sender through when a start is refused over a CLI already up', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('lets the next sender through when a start is refused over a CLI already up', async () => {
     // The Dashboard's start on an agent whose CLI runs: refused, nothing typed.
     // Left marked, that launch made the next /dispatch wait CLI_BOOT_MS for a
     // SessionStart no launch was going to send.
@@ -404,7 +425,7 @@ describe('a launch that fails', () => {
     expect(Date.now() - t0, 'the refused start still held the agent').toBeLessThan(CLI_BOOT_MS);
   });
 
-  it('lets the next sender through at once instead of after CLI_BOOT_MS', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('lets the next sender through at once instead of after CLI_BOOT_MS', async () => {
     const agent = agentMidConversation().agent;
     agent.ptyId = undefined;
     const pty = await import('node-pty');

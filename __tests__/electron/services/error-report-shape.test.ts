@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { hasPosixModes } from '../../setup/platform-limits';
 import { toReport, reportFingerprint, keepErrorsOnly, type ReportFacts } from '../../../electron/services/error-reports/report';
 import { ReportBudget } from '../../../electron/services/error-reports/budget';
 
@@ -345,7 +346,7 @@ describe('how many reports leave', () => {
     const budget = new ReportBudget(file, clock);
     expect(budget.admit('fp-1')).toBe(true);
     expect(JSON.parse(fs.readFileSync(file, 'utf-8')).installId).toBe(budget.installId);
-    expect(fs.statSync(file).mode & 0o077).toBe(0);
+    if (hasPosixModes()) expect(fs.statSync(file).mode & 0o077).toBe(0);
 
     const inMissingDir = new ReportBudget(path.join(dir, 'gone', 'error-reports.json'), clock);
     expect(inMissingDir.admit('fp-1')).toBe(true);

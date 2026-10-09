@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { isUnsafePathSegment } from '../platform/windows-names';
 
 /**
  * Where an agent's git worktree is allowed to live.
@@ -20,13 +21,19 @@ import * as path from 'path';
  */
 const BRANCH_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
-export function isValidBranchName(branch: string): boolean {
+/**
+ * On Windows, also no segment Win32 would rewrite: a device name (`feat/nul`
+ * opens NUL) or a trailing dot or space (`a./b` is the folder `a/b` to git and
+ * Explorer). See platform/windows-names.ts.
+ */
+export function isValidBranchName(branch: string, platform: NodeJS.Platform = process.platform): boolean {
   if (!branch || branch.length > 200) return false;
   if (!BRANCH_SHAPE.test(branch)) return false;
   if (branch.includes('..')) return false;
   if (branch.includes('//')) return false;
   if (branch.endsWith('/') || branch.endsWith('.') || branch.endsWith('.lock')) return false;
   if (branch.includes('@{')) return false;
+  if (branch.split('/').some(segment => isUnsafePathSegment(segment, platform))) return false;
   return true;
 }
 

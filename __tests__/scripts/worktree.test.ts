@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+
+// Every case runs git several times: a loaded windows-latest runner took 6.8 s
+// for one, past vitest's 5 s, as release.test.ts's
+// launches did before they were given 30 s.
+vi.setConfig({ testTimeout: 30_000 });
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { cannotSymlink } from '../setup/symlink-privilege';
 import {
   openRepo,
   createWorktree,
@@ -218,7 +224,7 @@ describe('dependencies', () => {
     expect(calls).toContainEqual(expect.objectContaining({ command: 'npm', args: expect.arrayContaining(['ci']), cwd: wt.path }));
   });
 
-  it('never takes a symlinked node_modules as a source, nor makes one', async () => {
+  it.skipIf(cannotSymlink())('never takes a symlinked node_modules as a source, nor makes one', async () => {
     const root = makeRepo({ installed: null });
     const elsewhere = makeRepo();
     fs.symlinkSync(path.join(elsewhere, 'node_modules'), path.join(root, 'node_modules'));

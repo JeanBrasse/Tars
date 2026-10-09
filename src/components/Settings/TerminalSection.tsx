@@ -1,6 +1,7 @@
 import { Select, Dropdown } from '@/components/ui';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
+import { TerminalShellRows } from './TerminalShellRows';
 import type { AppSettings } from './types';
 
 const MIN_FONT_SIZE = 8;
@@ -23,6 +24,7 @@ export const TerminalSection = ({ appSettings, onSaveAppSettings }: TerminalSect
 
   return (
     <SettingsCard>
+      <TerminalShellRows appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />
       <SettingsRow
         label="Theme"
         description="Applies to every agent terminal: Claude, Codex, Gemini and every CLI provider."

@@ -45,6 +45,10 @@
  * 14. a newline, a carriage return or a tab in a one-line field (a name, a
  *    folder, a skill) splits it over two lines or hides in it, where the
  *    prompt keeps its lines.
+ * 15. on Windows, a folder written the Windows way (`C:\Users\x\vault`, a
+ *    share) is refused as not absolute, so no template with a folder can be
+ *    imported there; or, on macOS and Linux, such a folder is
+ *    accepted, though it names nothing there.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -133,6 +137,25 @@ describe('each field is shown as it will be used, or the file is refused (2 to 7
   it.each(['~/.ssh', 'Documents/private', './report', '', ' /Users/you/.ssh'])('refuses the folder %j, which is not an absolute path (3)', (folder) => {
     expect(refusal(file([{ displayName: 'Security reviewer', obsidianVaultPaths: ['/Users/you/tars', folder] }])))
       .toBe(`Not imported: "Security reviewer" asks for the folder "${folder}", which is not an absolute path.`);
+  });
+
+  it('on Windows, accepts the folders Windows calls absolute (15)', () => {
+    const folders = ['C:\\Users\\you\\Documents\\vault', 'D:/work/notes', '\\\\server\\share\\vault', '/Users/noah/vault'];
+    const review = reviewTemplateFile(file([{ displayName: 'A', obsidianVaultPaths: folders }]), 'win32');
+    if (!review.ok) throw new Error(`expected the file to be accepted, got: ${review.error}`);
+    expect(review.templates[0].input.obsidianVaultPaths).toEqual(folders);
+  });
+
+  it.each(['C:vault', 'vault\\notes', '~\\vault', 'C:'])('on Windows, still refuses the folder %j (15)', (folder) => {
+    const review = reviewTemplateFile(file([{ displayName: 'Security reviewer', obsidianVaultPaths: [folder] }]), 'win32');
+    expect(review.ok ? 'accepted' : review.error)
+      .toBe(`Not imported: "Security reviewer" asks for the folder "${folder}", which is not an absolute path.`);
+  });
+
+  it.each(['darwin', 'linux'])('on %s, refuses a Windows folder, which names nothing there (15)', (platform) => {
+    const review = reviewTemplateFile(file([{ displayName: 'Security reviewer', obsidianVaultPaths: ['C:\\Users\\you\\vault'] }]), platform);
+    expect(review.ok ? 'accepted' : review.error)
+      .toBe('Not imported: "Security reviewer" asks for the folder "C:\\Users\\you\\vault", which is not an absolute path.');
   });
 
   it.each([['/Users/you/.ssh'], [{ 0: '/Users/you/.ssh' }], [7]])('refuses folders that are not a list of paths: %j (4)', (obsidianVaultPaths) => {

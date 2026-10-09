@@ -81,6 +81,7 @@ import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { sid } from '../../../fixtures/session-id';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
+import { moveTestHome } from '../../../setup/test-home';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-false-waiting-home-'));
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-false-waiting-project-'));
@@ -95,7 +96,7 @@ const ACP_FAILED: AcpOutcome = {
   error: 'initialize timed out after 90s',
 } as AcpOutcome;
 
-let savedHome: string | undefined;
+let restoreHome: () => void;
 let routes: RouteApp;
 let ctx: RouteContext;
 let orchestratorTerminal: FakePty;
@@ -106,8 +107,7 @@ beforeEach(() => {
   ptyProcesses.clear();
   vi.mocked(writeProgrammaticInput).mockClear();
   vi.mocked(delegateOverAcp).mockReset();
-  savedHome = process.env.HOME;
-  process.env.HOME = home;
+  restoreHome = moveTestHome(home);
   expect(os.homedir(), 'HOME is not redirected, and a spawn would write the real ~/.claude.json').toBe(home);
 
   routes = {
@@ -154,7 +154,7 @@ afterEach(async () => {
   expect(vi.getTimerCount()).toBe(0);
   vi.useRealTimers();
   stopAgentWatch();
-  process.env.HOME = savedHome;
+  restoreHome();
 });
 
 /** Calls a route the way the server does, and returns what it answered. */
@@ -706,3 +706,13 @@ describe('an orchestrator already waiting on this agent', () => {
     expect(toldOrchestrator().join(''), 'the poll that answered went on silencing the next turn').toContain('1212-Backend');
   });
 });
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux, once the home above
+// has moved as the host names it; the win32 launch (the CLI as the terminal's
+// process) is held by launch-call-sites.test.ts and agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeEach(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterEach(() => { Object.defineProperty(process, 'platform', hostPlatform); });

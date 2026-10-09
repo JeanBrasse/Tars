@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { runDirParent } from './run-dir';
 
 /**
  * The run's own temporary folder, and the guard that it is empty at the end.
@@ -32,12 +32,13 @@ function ranNoHooks(entry: string): boolean {
   return path.basename(entry).startsWith(FILE_PREFIX) && !fs.existsSync(path.join(entry, MARK));
 }
 
-export default function setup(): () => void {
+export default function setup(): () => Promise<void> {
   const before = Object.fromEntries(VARIABLES.map(name => [name, process.env[name]]));
-  const run = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-run-'));
+  // On Windows under the temp dir's canonical spelling (run-dir.ts says why: RUNNER~1 on CI).
+  const run = fs.mkdtempSync(path.join(runDirParent(), 'tars-vitest-run-'));
   for (const name of VARIABLES) process.env[name] = run;
 
-  return () => {
+  return async () => {
     for (const name of VARIABLES) {
       if (before[name] === undefined) delete process.env[name];
       else process.env[name] = before[name];
@@ -46,7 +47,10 @@ export default function setup(): () => void {
     try {
       left = fs.readdirSync(run).filter(name => !ranNoHooks(path.join(run, name)));
     } finally {
-      fs.rmSync(run, { recursive: true, force: true });
+      // Retried, as tmpdir-isolation.ts removes a file's folder and for the
+      // same reason: rmSync does not retry a folder Windows refuses to remove
+      // while a process ending has it as its working directory.
+      await fs.promises.rm(run, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
     if (left.length > 0) {
       const shown = left.slice(0, 20).join(', ');

@@ -7,17 +7,30 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
+import { childEnv, type Env } from '../platform';
 import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 
 export { setAccountEnvResolver } from './account-env';
+/** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
+export { agentShell } from '../platform';
 
 /**
- * How each agent PTY was started: the shell, as it was given to node-pty, and
- * whether it was handed a command to run (`-c`) rather than left interactive.
+ * How each agent PTY was started: the shell, as it was given to node-pty,
+ * whether it runs one command (a shell handed `-c`, or on Windows the CLI
+ * itself) rather than waiting at a prompt, and the environment its caller
+ * gave it, which a CLI started in its place on Windows inherits.
  */
-const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean }>();
+const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean; env: Env }>();
+
+/**
+ * The name every agent terminal is given. node-pty on Windows answers it when
+ * asked what runs in the terminal, whatever does (lib/windowsTerminal.js
+ * returns `opts.name`, measured on Windows 11): it cannot see the foreground
+ * process there.
+ */
+const TERMINAL_NAME = 'xterm-256color';
 
 /** When each agent PTY last printed something, and whether it has at all. */
 const heardFrom = new WeakMap<pty.IPty, { lastAt: number }>();
@@ -73,8 +86,20 @@ const NODE_PTY_HELPER = 'spawn-helper';
 export function spawnAgentPty(opts: {
   /** The provider's binary, which decides what Tars is allowed to impose. */
   binaryName: string;
+  /** The program: a shell, or on Windows the CLI itself (platform/launch.ts). */
   shell: string;
-  args: string[];
+  /**
+   * Its arguments. A CLI started directly on Windows passes the command line
+   * toLaunch quoted, as one string, which node-pty appends as it is.
+   */
+  args: string[] | string;
+  /**
+   * Whether the program runs one command and ends with it (a shell handed
+   * `-c`, the CLI itself) rather than waiting at a prompt. Said by the caller:
+   * it used to be read from a `-c` among the args, which a CLI started
+   * directly never has.
+   */
+  runsCommand: boolean;
   cwd: string;
   cols: number;
   rows: number;
@@ -104,11 +129,13 @@ export function spawnAgentPty(opts: {
   const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
 
   const spawned = pty.spawn(opts.shell, opts.args, {
-    name: 'xterm-256color',
+    name: TERMINAL_NAME,
     cols: size.cols,
     rows: size.rows,
     cwd: opts.cwd,
-    env: {
+    // Windows PowerShell, which an agent's terminal waits in there, gets no
+    // PSModulePath (platform/child-env.ts); any other program all of it.
+    env: childEnv(opts.shell, {
       ...env,
       // Which Tars this CLI answers to: its hooks, its bundled MCP servers and
       // anything else that calls back. It is set here, after the caller's env,
@@ -141,9 +168,9 @@ export function spawnAgentPty(opts: {
       // The state mod (services/state-mod.ts), for a claude new enough to load
       // it: its hooks report this terminal's state from inside the CLI.
       ...stateModLaunchEnv(opts.binaryName, env),
-    } as { [key: string]: string },
+    }) as { [key: string]: string },
   });
-  spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.args.includes('-c') });
+  spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.runsCommand, env: opts.env });
   // Whose terminal this is, so a message that has to wait for a draft in it
   // can name the agent whose panel should say so. Here because this is the
   // one function that spawns an agent's terminal, and a caller that has to
@@ -229,10 +256,22 @@ export function cliStoppedIn(ptyProcess: pty.IPty): boolean {
   return spawnedAs.has(ptyProcess) && !cliRunningIn(ptyProcess);
 }
 
-export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
+export function cliRunningIn(ptyProcess: pty.IPty | undefined, platform: NodeJS.Platform = process.platform): boolean {
   if (!ptyProcess) return false;
   const spawned = spawnedAs.get(ptyProcess);
   if (!spawned) return false;
+  // Windows: node-pty answers the terminal's name there, never what runs in it
+  // (TERMINAL_NAME above), so nothing is read from it. A terminal runs a CLI
+  // when its process is the CLI, for as long as it lives (its record goes on
+  // exit). Tars never types into the shell an agent waits in there, a start
+  // replaces it (startCliInTerminal), so that shell reads as holding no CLI:
+  // read as one, a bot typed its task into PowerShell as a message and
+  // agent:get reported a CLI. A person can still type a CLI into it by hand,
+  // and that CLI reads as not running: a known Windows limit. A start then
+  // refuses when the CLI registered its session from that shell
+  // (cliStartRefusal, agent-manager.ts); one that registers none is killed
+  // with the shell.
+  if (platform === 'win32') return spawned.runsCommand;
   let foreground: string | undefined;
   try {
     foreground = ptyProcess.process;
@@ -245,6 +284,17 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   return foreground !== path.basename(spawned.shell)
     && foreground !== spawned.shell
     && foreground !== NODE_PTY_HELPER;
+}
+
+/**
+ * The environment an agent terminal was spawned with, as its caller gave it:
+ * what a CLI started in its place inherits on Windows (startCliInTerminal,
+ * agent-manager.ts), so it runs with the identity, provider and PATH its
+ * terminal had. Undefined for a terminal that did not come from spawnAgentPty
+ * or has exited.
+ */
+export function agentPtyEnv(ptyProcess: pty.IPty | undefined): Env | undefined {
+  return ptyProcess ? spawnedAs.get(ptyProcess)?.env : undefined;
 }
 
 /**

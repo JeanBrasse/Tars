@@ -2,10 +2,9 @@ import { app, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import type { AppSettings } from '../types';
 import { getAllProviders } from '../providers';
+import { execCli, cliFailureText, nodeServerCommand, CliNotRunnableError } from '../providers/cli-exec';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 import { mcpNodeCommand, isTransientAppPath } from '../utils/mcp-node';
@@ -150,9 +149,14 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
       }
 
       foundAny = true;
+      // What each CLI will start: a bundle on the Node inside the app
+      // (mcpNodeCommand), and a .ts through npx tsx, which on Windows is an
+      // npm .cmd no CLI's spawn can start, so it is written as node and
+      // npx-cli.js (nodeServerCommand).
       const isTypeScript = serverPath.endsWith('.ts');
-      const command = isTypeScript ? 'npx' : nodeCommand;
-      const args = isTypeScript ? ['tsx', serverPath] : [serverPath];
+      const { command, args } = isTypeScript
+        ? nodeServerCommand(serverPath, name)
+        : { command: nodeCommand, args: [serverPath] };
 
       for (const provider of providers) {
         try {
@@ -387,15 +391,14 @@ export function setupOrchestratorStatusHandler(): void {
       let mcpListConfigured = false;
       if (!mcpJsonConfigured) {
         try {
-          const { execFile: execFileAsync } = await import('child_process');
-          const { promisify } = await import('util');
-          const execFilePromise = promisify(execFileAsync);
-          const { stdout } = await execFilePromise('claude', ['mcp', 'list'], {
+          // Resolved first: on Windows claude is an npm claude.cmd or a claude.exe.
+          const { stdout } = await execCli('claude', ['mcp', 'list'], {
             encoding: 'utf-8',
             timeout: 5000,
           });
           mcpListConfigured = stdout.includes('claude-mgr-orchestrator');
-        } catch {
+        } catch (err) {
+          console.warn(`[orchestrator] claude mcp list failed: ${cliFailureText(err)}`);
           mcpListConfigured = false;
         }
       }
@@ -421,8 +424,14 @@ export function setupOrchestratorStatusHandler(): void {
  * process, and bounded, as the status check's `claude mcp list` is.
  */
 // SIGKILL at the timeout: the default SIGTERM leaves a child that ignores it
-// running, and the setup waiting on it for good (the gate of #128).
-const runClaude = (args: string[]) => promisify(execFile)('claude', args, { encoding: 'utf-8', timeout: 15_000, killSignal: 'SIGKILL' });
+// running, and the setup waiting on it for good (the gate of #128). The name
+// is resolved first (execCli): on Windows a bare `claude` finds no npm install.
+const runClaude = (args: string[]) => execCli('claude', args, { encoding: 'utf-8', timeout: 15_000, killSignal: 'SIGKILL' });
+
+/** A remove that fails because nothing was registered is fine; a claude that cannot be started is said. */
+const reportUnrunnable = (err: unknown) => {
+  if (err instanceof CliNotRunnableError) console.warn(`[orchestrator] ${err.message}`);
+};
 
 /**
  * Setup the MCP orchestrator using claude mcp add command
@@ -450,13 +459,14 @@ export function setupOrchestratorSetupHandler(): void {
       // First try to remove any existing config to avoid duplicates (from both user and project scope)
       try {
         await runClaude(['mcp', 'remove', '-s', 'user', 'claude-mgr-orchestrator']);
-      } catch {
-        // Ignore errors if it doesn't exist
+      } catch (err) {
+        reportUnrunnable(err);
       }
       try {
         await runClaude(['mcp', 'remove', 'claude-mgr-orchestrator']);
-      } catch {
-        // Ignore errors if it doesn't exist in project scope
+      } catch (err) {
+        // Also fails when it is not in project scope, which is fine.
+        reportUnrunnable(err);
       }
 
       // Add the MCP server using claude mcp add with -s user for global scope
@@ -494,8 +504,8 @@ export function setupOrchestratorRemoveHandler(): void {
       // Remove from global user scope
       try {
         await runClaude(['mcp', 'remove', '-s', 'user', 'claude-mgr-orchestrator']);
-      } catch {
-        // Ignore errors if it doesn't exist
+      } catch (err) {
+        reportUnrunnable(err);
       }
 
       // Also clean up mcp.json fallback if it exists

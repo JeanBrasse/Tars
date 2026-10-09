@@ -408,6 +408,16 @@ export interface AppSettings {
    *  was the old behaviour and it spawned sessions on every visit home. */
   autoStartAgentsOnLaunch?: boolean;
   cliPaths: CLIPaths;
+  /**
+   * The shell a terminal runs on Windows: a path (Git Bash is
+   * `C:\Program Files\Git\bin\bash.exe`; a bare `bash` finds WSL's first), or a
+   * name on the PATH such as `pwsh`. Unset: pwsh.exe, else Windows PowerShell,
+   * else cmd.exe. Read on Windows only, where Settings > Terminal sets it (the
+   * Shell row: a shell it found, or a path typed in).
+   */
+  terminalShell?: string;
+  /** Windows: the first close has explained that Tars keeps running in the tray. */
+  closeToTrayExplained?: boolean;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
   ampEnabled?: boolean;

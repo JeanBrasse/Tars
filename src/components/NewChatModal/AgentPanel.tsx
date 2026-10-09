@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { tildePath } from '@/lib/display-path';
 import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
 import type { AgentProvider } from '@/types/electron';
 import { AgentMark, Button, Dropdown, Input, PanelCaption, Textarea } from '@/components/ui';
@@ -10,7 +11,6 @@ import { AgentOptionsBody } from './AgentOptionsBody';
 import { agentOptionsSummary } from './logic';
 import type { Project } from './types';
 
-const tildePath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
 
 export function AgentPanel(props: {
   name: string;

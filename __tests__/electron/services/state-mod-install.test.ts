@@ -39,6 +39,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 const { userData } = vi.hoisted(() => ({
   userData: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-mod-userdata-${process.pid}-${Date.now()}`,
@@ -103,7 +104,8 @@ describe('the mod Tars hands to claude', () => {
       expect(writable(sentinel)).toBe(false);
     }
     if (process.getuid?.() !== 0) {
-      expect(() => fs.writeFileSync(path.join(target, '.claude-plugin', 'types', 'index.d.ts'), 'x')).toThrow();
+      // On Windows a read-only folder still takes new files: its attribute guards the folder alone.
+      if (hasPosixModes()) expect(() => fs.writeFileSync(path.join(target, '.claude-plugin', 'types', 'index.d.ts'), 'x')).toThrow();
       expect(() => fs.writeFileSync(path.join(target, 'tsconfig.json'), '{}')).toThrow();
     }
   });

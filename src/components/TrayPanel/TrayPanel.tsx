@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import type { AgentTickItem } from '@/types/electron';
 import { Brand } from '@/components/Brand';
 import { Button, LoadingState } from '@/components/ui';
@@ -34,7 +35,7 @@ export default function TrayPanel() {
         displayStatus: deriveDisplayStatus(a),
         statusLine: a.statusLine || '',
         currentTask: a.currentTask || '',
-        projectName: a.projectPath ? a.projectPath.split('/').pop() || '' : '',
+        projectName: a.projectPath ? lastPathPart(a.projectPath) : '',
         lastActivity: a.lastActivity,
         provider: a.provider || 'claude',
       }));

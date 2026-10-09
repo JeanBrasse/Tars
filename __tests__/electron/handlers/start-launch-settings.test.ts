@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -24,7 +24,7 @@ import { EventEmitter } from 'node:events';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-launch-settings-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-launch-settings-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = {
@@ -99,6 +99,17 @@ import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks
 import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
 
 const project = path.join(tmpHome, 'project');
 const OLD_SESSION = '4ab31f00-ce51-4676-ab80-4023cf6e3f4e';
@@ -232,8 +243,18 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+/**
+ * The cases that resume a conversation read its transcript under Claude's
+ * folder for the project, named as darwin and linux name it (resume-session.ts:
+ * `/` and `.` to `-`). This file runs as linux on any host; on a Windows
+ * host the project is a Windows path, whose `:` and `\` no folder name can
+ * hold, so the transcript those cases resume from has nowhere to go. They run
+ * on macOS and Linux; the Windows name is held by resume-session.test.ts.
+ */
+const NO_POSIX_TRANSCRIPT_FOLDER = process.platform === 'win32';
+
 describe('a start from the Dashboard', () => {
-  it("runs on the agent's model, not on the one its last session answered on", async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)("runs on the agent's model, not on the one its last session answered on", async () => {
     // The Tars Orchestrator on 2026-09-22: record claude-opus-5-5, last
     // session on claude-opus-5, relaunched with `--model claude-opus-5`.
     lastSessionAnsweredOn('claude-opus-5');
@@ -298,7 +319,7 @@ describe('a start from the Dashboard', () => {
     expect(agent.currentTask).toBe('Rebase onto main');
   });
 
-  it('takes no session to resume from a window', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('takes no session to resume from a window', async () => {
     // A session id lands on a command line: a window cannot name one.
     lastSessionAnsweredOn('claude-opus-5');
     agentAtRest();
@@ -313,7 +334,7 @@ describe('a start from the Dashboard', () => {
 });
 
 describe('a changed model or effort', () => {
-  it('restarts an agent between turns at once, on its conversation, under a new session id', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('restarts an agent between turns at once, on its conversation, under a new session id', async () => {
     lastSessionAnsweredOn('claude-opus-5');
     const { agent, terminal } = agentWithTerminal({
       foreground: '2.1.280', model: 'claude-opus-5', effort: 'high',
@@ -341,7 +362,7 @@ describe('a changed model or effort', () => {
     expect(agent.status).toBe('idle');
   });
 
-  it('keeps the conversation through two restarts with no turn between them', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('keeps the conversation through two restarts with no turn between them', async () => {
     // A fork writes its transcript at its first turn. Measured in the app on
     // 2026-09-23: a second restart found no file for the fork it was
     // replacing and came up on a fresh session, the conversation gone.
@@ -372,7 +393,7 @@ describe('a changed model or effort', () => {
     expect(typedInto(second)).toContain(' --effort max');
   });
 
-  it('hands the agent to the restarted session, and refuses the one it replaced', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('hands the agent to the restarted session, and refuses the one it replaced', async () => {
     lastSessionAnsweredOn('claude-opus-5');
     const { agent } = agentWithTerminal({
       foreground: '2.1.280', model: 'claude-opus-5',
@@ -532,7 +553,7 @@ describe('a changed model or effort', () => {
     expect(spawned.length).toBe(count);
   });
 
-  it('waits for work the session left running in the background, and restarts once it reported back', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('waits for work the session left running in the background, and restarts once it reported back', async () => {
     // Measured on 2.1.280: asked to sleep 25, the CLI ran it in the background
     // and ended its turn ten seconds in. Tars saw `idle` and, without this,
     // killed the CLI with the sleep, and the turn waiting on it.
@@ -666,7 +687,7 @@ describe('a changed model or effort', () => {
     }
   });
 
-  it("adopts the restarted session's first post when its SessionStart never came", async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)("adopts the restarted session's first post when its SessionStart never came", async () => {
     // The restart lets go of the session it ended. Kept as the owner, that id
     // is also the tombstone, and every post of the new session was refused as
     // stale, for good.
@@ -704,7 +725,7 @@ describe('a changed model or effort', () => {
     expect(typedInto(last), 'the CLI was left on a model the record no longer has').toContain(" --model 'claude-opus-5-5'");
   });
 
-  it('picks the conversation up on another vendor too, as it does on Claude', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('picks the conversation up on another vendor too, as it does on Claude', async () => {
     // The thirteen providers that point the claude binary elsewhere had no
     // resume: a changed setting started them on a new conversation.
     lastSessionAnsweredOn('qwen3-coder');
@@ -796,7 +817,7 @@ describe('a restart that waits, as a window sees it', () => {
 });
 
 describe('a restart asked for from the Dashboard', () => {
-  it('continues the conversation under a new session id', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('continues the conversation under a new session id', async () => {
     lastSessionAnsweredOn('claude-opus-5-5');
     const { agent, terminal } = agentWithTerminal({
       foreground: '2.1.280', currentSessionId: OLD_SESSION, resumableSessionId: OLD_SESSION, sessionPtyId: 'pty-a',
@@ -811,7 +832,7 @@ describe('a restart asked for from the Dashboard', () => {
     expect(agent.ptyId).not.toBe('pty-a');
   });
 
-  it("is what keeps the conversation: the window's stop then start began a new one", async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)("is what keeps the conversation: the window's stop then start began a new one", async () => {
     // The negative control. The first start of an app run resumes; every
     // later one starts fresh, which is what a stop then a start from the
     // left-fullscreen notice did.
@@ -826,7 +847,7 @@ describe('a restart asked for from the Dashboard', () => {
     expect(typedInto(newTerminal(before))).not.toContain('--resume');
   });
 
-  it('does now what a restart waiting on new settings would have done later, and says the wait is over', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('does now what a restart waiting on new settings would have done later, and says the wait is over', async () => {
     lastSessionAnsweredOn('claude-opus-5');
     const { agent } = agentWithTerminal({
       foreground: '2.1.280', status: 'running', model: 'claude-opus-5',

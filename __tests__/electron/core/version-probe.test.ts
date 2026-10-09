@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as ts from 'typescript';
+import { CMD_SHIM_NODE } from '../services/cli-updater-windows-fakes';
+import { skipOnWindows } from '../../setup/platform-limits';
 
 /**
  * The version probes Tars runs end with the quit (the Audit's gate of #298).
@@ -30,12 +32,34 @@ import * as ts from 'typescript';
 
 const ELECTRON = path.join(__dirname, '../../../electron');
 
-function standIn(body: string): { bin: string; dir: string } {
+/**
+ * Windows starts no extensionless script: there a stand-in is a node script
+ * behind npm's .cmd shim, which the probe reads through to node
+ * (resolveCliBinary), as it does amp's and gemini's. The script names its
+ * marks after __filename, so a test reads them by `mark`, which is the
+ * stand-in itself elsewhere.
+ */
+function windowsStandIn(dir: string, script: string): { bin: string; mark: string } {
+  const mark = path.join(dir, 'stand-in.js');
+  fs.writeFileSync(mark, script);
+  const bin = path.join(dir, 'stand-in.cmd');
+  fs.writeFileSync(bin, CMD_SHIM_NODE('stand-in.js'));
+  return { bin, mark };
+}
+
+/** `body` in sh, and `windows`, the same in node, for Windows. */
+function standIn(body: string, windows: string): { bin: string; dir: string; mark: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-probe-'));
+  if (process.platform === 'win32') return { dir, ...windowsStandIn(dir, windows) };
   const bin = path.join(dir, 'stand-in');
   fs.writeFileSync(bin, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
-  return { bin, dir };
+  return { bin, dir, mark: bin };
 }
+
+/** Why 7 cannot hold on Windows. */
+const ANSWERED_TREE_REASON = 'Windows ends a tree by taskkill /T from its root, and a probe that answered has exited: '
+  + 'what it started is out of its reach, and its id may be another process\'s by then (version-probe-windows.test.ts); '
+  + 'test 7 runs on macOS, Linux and CI';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -50,7 +74,7 @@ async function fresh() {
 describe('a version probe', () => {
   it('4. answers its version when the binary answers in time', async () => {
     const { probe } = await fresh();
-    const { bin, dir } = standIn('echo "amp 1.2.3"');
+    const { bin, dir } = standIn('echo "amp 1.2.3"', "console.log('amp 1.2.3');");
     try {
       await expect(probe.probeVersion(bin, process.env)).resolves.toMatchObject({ stdout: 'amp 1.2.3\n' });
     } finally {
@@ -60,7 +84,7 @@ describe('a version probe', () => {
 
   it('4. is still cut by its timeout', async () => {
     const { probe } = await fresh();
-    const { bin, dir } = standIn('sleep 5; echo late');
+    const { bin, dir } = standIn('sleep 5; echo late', "setTimeout(() => console.log('late'), 5000);");
     try {
       const began = Date.now();
       await expect(probe.probeVersion(bin, process.env, 300)).rejects.toThrow();
@@ -76,30 +100,32 @@ describe('a version probe', () => {
     // second later. (A shell's background child proved too slow to start, on a
     // loaded machine, to tell a kill of the group from a kill of the binary.)
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-probe-'));
-    const bin = path.join(dir, 'stand-in');
-    fs.writeFileSync(bin, [
-      `#!${process.execPath}`,
+    const script = [
       "const { spawn } = require('child_process'); const fs = require('fs');",
       "spawn(process.execPath, ['-e', 'setTimeout(() => require(\"fs\").writeFileSync(process.argv[1], \"\"), 1000)', __filename + '.child'], { stdio: 'ignore' });",
       "fs.writeFileSync(__filename + '.started', '');",
       "setTimeout(() => { fs.writeFileSync(__filename + '.self', ''); console.log('late'); }, 1000);",
       '',
-    ].join('\n'), { mode: 0o755 });
+    ].join('\n');
+    let bin = path.join(dir, 'stand-in');
+    let mark = bin;
+    if (process.platform === 'win32') ({ bin, mark } = windowsStandIn(dir, script));
+    else fs.writeFileSync(bin, `#!${process.execPath}\n${script}`, { mode: 0o755 });
     try {
       const answer = probe.probeVersion(bin, process.env).then(() => 'answered', () => 'ended');
-      for (const until = Date.now() + 10_000; !fs.existsSync(`${bin}.started`) && Date.now() < until;) await settle(50);
-      expect(fs.existsSync(`${bin}.started`), 'the stand-in never started').toBe(true);
+      for (const until = Date.now() + 10_000; !fs.existsSync(`${mark}.started`) && Date.now() < until;) await settle(50);
+      expect(fs.existsSync(`${mark}.started`), 'the stand-in never started').toBe(true);
       probe.endVersionProbes();
       expect(await answer).toBe('ended');
       await settle(3000);
-      expect(fs.existsSync(`${bin}.self`), 'the probe wrote after the quit').toBe(false);
-      expect(fs.existsSync(`${bin}.child`), 'what the probe started wrote after the quit').toBe(false);
+      expect(fs.existsSync(`${mark}.self`), 'the probe wrote after the quit').toBe(false);
+      expect(fs.existsSync(`${mark}.child`), 'what the probe started wrote after the quit').toBe(false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 20_000);
 
-  it('7. one that answers at once leaves nothing it started running after its answer', async () => {
+  it.skipIf(skipOnWindows(ANSWERED_TREE_REASON))('7. one that answers at once leaves nothing it started running after its answer', async () => {
     const { probe } = await fresh();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-probe-'));
     const bin = path.join(dir, 'stand-in');
@@ -127,12 +153,12 @@ describe('a version probe', () => {
 
   it('3. is not started during the quit', async () => {
     const { quit, probe } = await fresh();
-    const { bin, dir } = standIn(`touch "${'$0'}.ran"; echo 1`);
+    const { bin, dir, mark } = standIn(`touch "${'$0'}.ran"; echo 1`, "require('fs').writeFileSync(__filename + '.ran', ''); console.log(1);");
     try {
       quit.beginQuit();
       await expect(probe.probeVersion(bin, process.env)).rejects.toThrow(/quitting/);
       await settle(300);
-      expect(fs.existsSync(`${bin}.ran`)).toBe(false);
+      expect(fs.existsSync(`${mark}.ran`)).toBe(false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

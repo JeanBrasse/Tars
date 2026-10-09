@@ -33,6 +33,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { saveUncommittedWork, submodulesWithWork, wipBranchName } from '../../../electron/services/save-worktree-work';
+import { skipOnWindows } from '../../setup/platform-limits';
+
+/** Why 7 cannot hold on Windows. */
+const READ_ONLY_FOLDER_REASON = 'chmod 0o555 only sets the read-only attribute on Windows, which it ignores on a folder: '
+  + 'git still writes its objects, and the save cannot be made to fail this way; test 7 runs on macOS, Linux and CI';
+/** The submodule tests run some thirty git commands, about 6 s on Windows alone and more under load. */
+const SUBMODULE_TIMEOUT_MS = 30_000;
 
 let root: string;
 let repo: string;
@@ -128,7 +135,7 @@ describe('the uncommitted work of a worktree, saved before it goes', () => {
     expect(await saveUncommittedWork(wt, 'QA')).toEqual({ branch: 'wip/qa', nestedRepos: [] });
   });
 
-  it('7. a save that fails says so, and leaves the work where it was', async () => {
+  it.skipIf(skipOnWindows(READ_ONLY_FOLDER_REASON))('7. a save that fails says so, and leaves the work where it was', async () => {
     fs.writeFileSync(path.join(wt, 'a.txt'), 'kept\n');
     // An object store git cannot write to: nothing can be committed.
     const objects = path.join(repo, '.git', 'objects');
@@ -159,9 +166,12 @@ describe('the submodules of a worktree', () => {
     git(wt, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', '-q');
     expect(await submodulesWithWork(wt)).toEqual([]);
 
+    // Removed first: Git for Windows hides a .git, and Windows refuses to open
+    // a hidden file for overwriting (EPERM).
+    fs.rmSync(path.join(wt, 'vendor', 'lib', '.git'));
     fs.writeFileSync(path.join(wt, 'vendor', 'lib', '.git'), `gitdir: ${path.join(repo, '.git', 'gone')}\n`);
     expect(await submodulesWithWork(wt)).toEqual(['vendor/lib']);
-  });
+  }, SUBMODULE_TIMEOUT_MS);
 
   it('13. looks into a submodule inside a submodule, and names the inner one', async () => {
     const repoAt = (dir: string) => {
@@ -192,6 +202,6 @@ describe('the submodules of a worktree', () => {
     git(nested, 'stash', '-q');
     expect(git(path.join(wt, 'vendor', 'lib'), 'status', '--porcelain')).toBe('');
     expect(await submodulesWithWork(wt)).toEqual(['vendor/lib/inner']);
-  });
+  }, SUBMODULE_TIMEOUT_MS);
 });
 

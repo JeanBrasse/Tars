@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } 
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The jar that said yes while every call came back 401.
@@ -26,8 +27,8 @@ import * as path from 'node:path';
 // vi.hoisted runs before this file's imports exist, so the path is built from
 // globals here and the directory is created in beforeAll.
 const { TMP_DATA_DIR } = vi.hoisted(() => {
-  const base = (process.env.TMPDIR || '/tmp').replace(/\/$/, '');
-  return { TMP_DATA_DIR: `${base}/tars-hermes-jar-${process.pid}-${Date.now()}` };
+  const base = process.getBuiltinModule('node:os').tmpdir();
+  return { TMP_DATA_DIR: process.getBuiltinModule('node:path').join(base, `tars-hermes-jar-${process.pid}-${Date.now()}`) };
 });
 
 vi.mock('../../../electron/constants', async importOriginal => ({
@@ -272,14 +273,14 @@ describe('a jar file that is not a jar', () => {
 });
 
 describe('the file is a credential', () => {
-  it('is still 0600 after the jar is written', async () => {
+  it.skipIf(!hasPosixModes())('is still 0600 after the jar is written', async () => {
     await respondWith('hermes_session_at=realtoken');
 
     const mode = fs.statSync(SESSION_FILE).mode & 0o777;
     expect(mode.toString(8)).toBe('600');
   });
 
-  it('is still 0600 after a write over a file left world-readable', async () => {
+  it.skipIf(!hasPosixModes())('is still 0600 after a write over a file left world-readable', async () => {
     // A jar from an older build, or restored from a backup, can arrive at
     // 0644. The write has to narrow it rather than inherit it.
     await respondWith('hermes_session_at=realtoken');

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
 
 /**
@@ -65,6 +65,17 @@ import { RouteApp, RouteRequest } from '../../../../electron/services/api-routes
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
 import { sid } from '../../../fixtures/session-id';
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
 
 /** Comfortably past the ten minute grace period, plus the tick's own delay. */
 const PAST_THE_GRACE = 700_000;

@@ -139,11 +139,17 @@ function terminal(kind: Job, opts: { disowned?: boolean; deafShell?: boolean; ex
   return t;
 }
 
+// The fixture is a bash process group read through ps: POSIX only. On Windows a
+// terminal is a ConPTY console, which the quit ends through killPty
+// (pty-kill.test.ts); its whole tree is not read there yet. Without bash the
+// fixture's pids read 0, and these cases would pass on nothing.
+const posixGroups = describe.skipIf(process.platform === 'win32');
+
 const settle = async (t: { job: () => number; grandchild: () => number }) => {
   for (let i = 0; i < 50 && !(t.job() && t.grandchild()); i++) await new Promise(r => setTimeout(r, 20));
 };
 
-describe('the quit, for the agents\' terminals', () => {
+posixGroups('the quit, for the agents\' terminals', () => {
   it('1, 2. ends a CLI that ignores the hangup, and its children, within the grace', async () => {
     const t = terminal('stubborn');
     ptyProcesses.set('pty-1', t.pty);
@@ -196,7 +202,7 @@ describe('the quit, for the agents\' terminals', () => {
   });
 });
 
-describe('the maps the quit empties (QA E9, gate of #235)', () => {
+posixGroups('the maps the quit empties (QA E9, gate of #235)', () => {
   it("ends the skill and plugin runners' trees too, a `claude auth login` terminal among them, and leaves every map empty", async () => {
     // main.ts hands pluginPtyProcesses to the accounts handlers as loginPtys.
     const skill = terminal('stubborn');
@@ -218,7 +224,7 @@ describe('the maps the quit empties (QA E9, gate of #235)', () => {
   });
 });
 
-describe('the fixture', () => {
+posixGroups('the fixture', () => {
   it('7. is stubborn when it says so: its job and child outlive a SIGHUP to their group', async () => {
     const t = terminal('stubborn');
     await settle(t);
@@ -229,7 +235,7 @@ describe('the fixture', () => {
   });
 });
 
-describe('the quit, after the Audit\'s gate', () => {
+posixGroups('the quit, after the Audit\'s gate', () => {
   it('6. lets a CLI that takes half a second to end on the hangup end by itself', async () => {
     const t = terminal('slow');
     ptyProcesses.set('pty-slow', t.pty);
