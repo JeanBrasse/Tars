@@ -44,6 +44,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { skipOnWindows } from '../../setup/platform-limits';
 
 const { tmpHome } = vi.hoisted(() => ({
   tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-remove-saves-${process.pid}-${Date.now()}`,
@@ -135,7 +136,12 @@ afterEach(() => {
   agents.clear();
 });
 
-describe('the window\'s Delete', () => {
+/** Why 2, 3 cannot hold on Windows. */
+const READ_ONLY_FOLDER_REASON = 'chmod 0o555 only sets the read-only attribute on Windows, which it ignores on a folder: '
+  + 'git still writes its objects, and the save cannot be made to fail this way; test 2, 3 runs on macOS, Linux and CI';
+
+// A submodule test runs some thirty git commands: about 4 s on Windows alone, more under load.
+describe('the window\'s Delete', { timeout: 30_000 }, () => {
   it('1, 3. saves the uncommitted work on wip/<name>, removes the worktree, and says where the work went', async () => {
     fs.writeFileSync(path.join(wt, 'a.txt'), 'one\ntwo\n');
     fs.writeFileSync(path.join(wt, 'new.txt'), 'fresh\n');
@@ -283,7 +289,7 @@ describe('the window\'s Delete', () => {
     expect(fs.existsSync(wt)).toBe(false);
   });
 
-  it('2, 3. keeps the worktree when the work cannot be saved, and says why', async () => {
+  it.skipIf(skipOnWindows(READ_ONLY_FOLDER_REASON))('2, 3. keeps the worktree when the work cannot be saved, and says why', async () => {
     fs.writeFileSync(path.join(wt, 'a.txt'), 'kept\n');
     const objects = path.join(repo, '.git', 'objects');
     fs.chmodSync(objects, 0o555);

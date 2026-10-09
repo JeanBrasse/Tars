@@ -5,8 +5,8 @@ engineers. Every agent gets a real terminal, its own git worktree and its own
 model; you watch all of them at once, delegate between them, and see what each
 one actually changed.
 
-macOS. Free and open source. No account, no cloud in the middle: the CLIs run
-on your machine and Tars is the room they work in.
+macOS and Windows. Free and open source. No account, no cloud in the middle: the
+CLIs run on your machine and Tars is the room they work in.
 
 ![The dashboard: every running agent in one grid, each pane a live terminal](screenshots/dashboard.png)
 
@@ -177,9 +177,16 @@ turns used as it ends.
 
 ## Install
 
-Download the latest release for macOS 13 (Ventura) or later:
+Download the latest release for macOS 13 (Ventura) or later, or for Windows 10 or 11
+(64-bit):
 
 **[github.com/cooper-labs-tech/Tars/releases/latest](https://github.com/cooper-labs-tech/Tars/releases/latest)**
+
+On Windows, run `Tars-Setup-<version>.exe`. It installs for your account only, with
+no administrator rights, and adds Tars to the Start menu and the desktop. The
+installer is not signed, so SmartScreen warns on its first run: More info, then Run
+anyway. Tars updates itself from the same releases as on macOS. Closing the window
+keeps your agents working, with Tars in the tray; Quit Tars in the tray's menu ends it.
 
 Then point Tars at a folder. It finds the CLIs already installed on your machine:
 you do not configure paths unless something lives somewhere unusual.
@@ -291,7 +298,9 @@ without leaving Tars. Without a gateway the rest of Tars works fine.
 
 ## Where your data lives
 
-Everything is a file in your home directory. Nothing is uploaded.
+Everything is a file in your home directory. Nothing is uploaded. On Windows that
+is `%USERPROFILE%`, and a file marked `0600` below is closed to every account but
+yours by its access list, Windows having no mode bits.
 
 | File | What it holds |
 |---|---|
@@ -330,7 +339,7 @@ npx tsc --noEmit                       # renderer
 npx tsc -p electron/tsconfig.json --noEmit
 npx vitest run                         # unit
 npx eslint .
-bash scripts/design-lint.sh            # the design rules that can be linted
+node scripts/design-lint.mjs           # the design rules that can be linted
 npx playwright test                    # boots the real app and walks every surface
 ```
 

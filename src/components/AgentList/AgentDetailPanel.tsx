@@ -11,6 +11,7 @@ import {
   Blocks,
   Terminal as TerminalIcon,
 } from 'lucide-react';
+import { lastPathPart } from '@/lib/display-path';
 import type { AgentStatus } from '@/types/electron';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { AgentMark, BrandSpinner } from '@/components/ui';
@@ -40,7 +41,7 @@ export function AgentDetailPanel({
           <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} size={24} />
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold">{agent.name || agent.projectPath.split('/').pop()}</h3>
+              <h3 className="font-semibold">{agent.name || lastPathPart(agent.projectPath)}</h3>
               {agent.provider && agent.provider !== 'claude' && agent.provider !== 'local' && (
                 <span className="font-mono text-[10.5px] text-muted-foreground">{agent.provider}</span>
               )}

@@ -25,6 +25,7 @@
  * - the command given as a string to a shell.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { claudeAccountsNotPorted } from '../../setup/platform-limits';
 
 // Every test runs a binary: 5 s is too short under the fleet's load.
 vi.setConfig({ testTimeout: 30_000 });
@@ -50,7 +51,7 @@ afterEach(() => {
   }
 });
 
-describe('the environment', () => {
+describe.skipIf(claudeAccountsNotPorted())('the environment', () => {
   it('names the directory for an account, and none for account 1', () => {
     const base = { PATH: '/usr/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/elsewhere', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/x', CLAUDECODE: '1', TARS_CLAUDE_ACCOUNT: 'acct-ffffff' };
     const a = accountEnv(dirA, base);
@@ -71,7 +72,7 @@ describe('the environment', () => {
   });
 });
 
-describe('claude auth status', () => {
+describe.skipIf(claudeAccountsNotPorted())('claude auth status', () => {
   it('reads signed in, with the e-mail and the plan', async () => {
     signIn(dirA, 'two@example.com');
     expect(await claudeAuthStatus(fake.bin, dirA)).toEqual({
@@ -106,7 +107,7 @@ describe('claude auth status', () => {
   });
 });
 
-describe('claude auth logout', () => {
+describe.skipIf(claudeAccountsNotPorted())('claude auth logout', () => {
   it('signs that directory out and no other', async () => {
     const dirB = `${dirA}-b`;
     signIn(dirA, 'two@example.com');
@@ -124,7 +125,7 @@ describe('claude auth logout', () => {
   });
 });
 
-describe('the login command', () => {
+describe.skipIf(claudeAccountsNotPorted())('the login command', () => {
   it('is the binary itself with auth login --claudeai, aimed at the directory', () => {
     const c = loginCommand(fake.bin, dirA, { PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/other' });
     expect(c.file).toBe(fake.bin);

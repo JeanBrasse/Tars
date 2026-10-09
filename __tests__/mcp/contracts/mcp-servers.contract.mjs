@@ -36,6 +36,24 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../../..");
 const RECORDING = path.join(HERE, "mcp-servers.contract.json");
 const PRELOAD = path.join(HERE, "https-to-fake.mjs");
+
+/**
+ * On Windows a server's os.homedir() is USERPROFILE, and with none in its
+ * environment libuv asks Windows for the account's real profile: HOME alone
+ * would have the servers read the real ~/.dorothy. The same variables
+ * __tests__/setup/test-home.ts moves; nothing is added elsewhere.
+ */
+function windowsHome(home) {
+  if (process.platform !== "win32") return {};
+  const drive = path.parse(home).root.replace(/[\\/]+$/, "");
+  return {
+    USERPROFILE: home,
+    HOMEDRIVE: drive,
+    HOMEPATH: home.slice(drive.length),
+    APPDATA: path.join(home, "AppData", "Roaming"),
+    LOCALAPPDATA: path.join(home, "AppData", "Local"),
+  };
+}
 const argv = process.argv.slice(2);
 const RECORD = argv.includes("--record");
 const BUILD = !argv.includes("--no-build");
@@ -176,6 +194,7 @@ async function runVariant(server, variant, fake, sandbox) {
     env: {
       PATH: process.env.PATH,
       HOME: home,
+      ...windowsHome(home),
       CLAUDE_MGR_API_URL: `http://127.0.0.1:${fake.port}`,
       CONTRACT_FAKE_PORT: String(fake.port),
       ...variant.env,

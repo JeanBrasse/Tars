@@ -11,11 +11,24 @@
  * once per window, and main drops whatever it is handed.
  */
 
+import { rendererPlatform } from '@/lib/display-path';
+
+/**
+ * Whether this window offers error reports at all: not on a Windows build,
+ * whose reports would go to a Sentry project that has not agreed to receive
+ * them (main holds the same line in electron/platform/error-reports.ts).
+ * There the row is hidden and the SDK
+ * never loads.
+ */
+export function errorReportsOffered(platform: string = rendererPlatform()): boolean {
+  return platform !== 'win32';
+}
+
 let started: Promise<boolean> | null = null;
 
 /** Starts the window's SDK when `enabled`, once; never loads it otherwise. Resolves to whether it runs. */
 export function followErrorReports(enabled: boolean): Promise<boolean> {
-  if (!enabled) return started ?? Promise.resolve(false);
+  if (!enabled || !errorReportsOffered()) return started ?? Promise.resolve(false);
   started ??= import('@sentry/electron/renderer')
     .then((sentry) => {
       sentry.init({

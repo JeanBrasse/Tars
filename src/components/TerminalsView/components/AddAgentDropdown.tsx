@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import { ChevronDown } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import { Button } from '@/components/ui';
@@ -76,7 +77,7 @@ export default function AddAgentDropdown({
       if (tabSet.has(a.id)) return false;
       if (!q) return true;
       const name = (a.name || `Agent ${a.id.slice(0, 6)}`).toLowerCase();
-      const project = (a.projectPath.split('/').pop() || a.projectPath).toLowerCase();
+      const project = (lastPathPart(a.projectPath) || a.projectPath).toLowerCase();
       return name.includes(q) || project.includes(q);
     });
 
@@ -88,7 +89,7 @@ export default function AddAgentDropdown({
     }
 
     return Array.from(byProject.entries()).map(([path, agents]) => ({
-      projectName: path.split('/').pop() || path,
+      projectName: lastPathPart(path) || path,
       projectPath: path,
       agents,
     }));

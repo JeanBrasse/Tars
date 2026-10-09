@@ -13,13 +13,17 @@ import { quoted } from '../utils/reveal';
 import { rolesOnLoad } from './agent-role';
 import { ptyProcesses, setDialogProbe, setCliProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
-import { cliStoppedIn, spawnAgentPty } from './agent-pty';
+import type * as pty from 'node-pty';
+import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
+import { killPty } from './pty-kill';
+import { withPath, type DirectLaunch, type Launch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
 import { carriedByTrim } from '../utils/terminal-modes';
 import { updateSharedJsonSync } from '../utils/shared-file';
+import { renameReplacingSync } from '../platform/rename-replacing';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
@@ -209,7 +213,7 @@ export function killStalePty(agent: AgentStatus): boolean {
   const existing = ptyProcesses.get(agent.ptyId);
   if (existing) {
     try {
-      existing.kill();
+      killPty(existing);
     } catch (err) {
       console.warn(`Failed to kill stale PTY for agent ${agent.id}:`, err);
     }
@@ -231,6 +235,23 @@ const pendingStatusChanges: Map<string, {
   timeoutId: NodeJS.Timeout;
 }> = new Map();
 
+/** Set by the quit: the terminals it ends must announce nothing while it runs. */
+let statusNotificationsStopped = false;
+
+/**
+ * The quit's step, before it ends the terminals. On Windows the quit then waits
+ * for their exits, up to 5 s more (holdExitUntilTerminalsExit, pty-kill.ts), and
+ * each exit is a status change whose announcement could go out during that
+ * wait: from here on none is made, and none still pending goes out. darwin and
+ * linux end without that wait and keep today's announcements.
+ */
+export function stopStatusNotifications(platform: NodeJS.Platform = process.platform): void {
+  if (platform !== 'win32') return;
+  statusNotificationsStopped = true;
+  for (const pending of pendingStatusChanges.values()) clearTimeout(pending.timeoutId);
+  pendingStatusChanges.clear();
+}
+
 export function handleStatusChangeNotification(
   agent: AgentStatus,
   newStatus: string,
@@ -239,6 +260,7 @@ export function handleStatusChangeNotification(
   sendTelegramMessage?: (text: string) => void,
   sendSuperAgentResponseToTelegram?: (agent: AgentStatus) => void
 ) {
+  if (statusNotificationsStopped) return;
   const prevStatus = previousAgentStatus.get(agent.id);
 
   // Out of error: its next error is news for Noah's reports again.
@@ -522,7 +544,7 @@ export function saveAgents() {
     const json = JSON.stringify(payload, null, 2);
     const tmp = `${AGENTS_FILE}.tmp`;
     fs.writeFileSync(tmp, json);
-    fs.renameSync(tmp, AGENTS_FILE);
+    renameReplacingSync(tmp, AGENTS_FILE);
     // Remembered only when there is something to lose: see
     // backupPreviousGeneration for why an empty list is deliberately forgotten.
     const remember = payload.agents.length > 0;
@@ -970,6 +992,117 @@ export async function initAgentPty(
   }
 }
 
+/**
+ * The CLI initAgentPty starts in place of a shell, handed over by
+ * startCliInTerminal and taken once. Keyed by the agent record because every
+ * caller reaches initAgentPty through a wrapper that passes the agent alone
+ * (main.ts, the bots, the IPC handlers).
+ */
+const cliToStart = new WeakMap<AgentStatus, DirectLaunch>();
+
+/** What startCliInTerminal needs from its caller: the live map and the one way a terminal is opened. */
+export interface AgentTerminals {
+  ptyProcesses: Map<string, pty.IPty>;
+  initAgentPty: (agent: AgentStatus) => Promise<string>;
+}
+
+/**
+ * Why a start may not replace the shell an agent waits in on Windows, or
+ * undefined when it may.
+ *
+ * Nothing Tars starts runs in that shell there (a start replaces it, see
+ * startCliInTerminal), and node-pty cannot say what does (cliRunningIn), but a
+ * person can type a CLI into it by hand. When that CLI registered its session
+ * from this very terminal, killing the shell ends a live session without the
+ * tombstone spawnAgentSession lays, and its hooks go on posting into the next
+ * one. Refused, as a start is on macOS when a CLI runs in the terminal. A CLI
+ * typed by hand that registers no session (codex, gemini) cannot be seen, and
+ * is killed with the shell: a known Windows limit.
+ */
+export function cliStartRefusal(
+  agent: AgentStatus,
+  start: Pick<Launch, 'platform'> | NodeJS.Platform = process.platform,
+): string | undefined {
+  if ((typeof start === 'string' ? start : start.platform) !== 'win32') return undefined;
+  if (!agent.ptyId || !agent.currentSessionId || agent.sessionPtyId !== agent.ptyId) return undefined;
+  return `${agent.name || agent.id} has a CLI session typed into its terminal by hand. Nothing was started: stop the agent first, or give it the task in its terminal.`;
+}
+
+/**
+ * Start an agent's CLI as its terminal's own process, where darwin and linux
+ * type the launch line into the shell waiting there (win32).
+ *
+ * Nothing is typed on Windows: a line typed into PowerShell runs each line of
+ * a multi-line prompt as a command, and PowerShell 5.1 has no `&&`. So the waiting shell is killed and the terminal opened again
+ * through initAgentPty, the one function that spawns an agent's terminal,
+ * with the CLI as its process, in the launch's folder and environment.
+ * Refused, with the shell left alone, when cliStartRefusal says so.
+ *
+ * The agent names no terminal while its shell is killed: every onExit of an
+ * agent terminal acts only for the terminal its agent names, and the shell
+ * ending is not the agent stopping.
+ */
+export async function startCliInTerminal(
+  agent: AgentStatus,
+  launch: DirectLaunch,
+  deps: AgentTerminals,
+): Promise<pty.IPty> {
+  const refused = cliStartRefusal(agent, launch);
+  if (refused) throw new Error(refused);
+  const shellId = agent.ptyId;
+  const shell = shellId ? deps.ptyProcesses.get(shellId) : undefined;
+  if (shellId) deps.ptyProcesses.delete(shellId);
+  agent.ptyId = undefined;
+  if (shell) killPty(shell);
+
+  cliToStart.set(agent, launch);
+  let opened: string;
+  try {
+    opened = await deps.initAgentPty(agent);
+  } catch (err) {
+    cliToStart.delete(agent);
+    throw err;
+  }
+  agent.ptyId = opened;
+  // Still here, initAgentPty never took it: it handed back the terminal a call
+  // before this one was already opening, a shell, not this CLI.
+  if (cliToStart.delete(agent)) {
+    throw new Error(
+      `${agent.name || agent.id}: another terminal was being opened for this agent, so its CLI was not started. Start it again.`,
+    );
+  }
+  const cli = deps.ptyProcesses.get(agent.ptyId);
+  if (!cli) throw new Error(`${agent.name || agent.id}: the terminal of its CLI is gone as soon as it was opened.`);
+  return cli;
+}
+
+/**
+ * Start the command a launch describes in the agent's terminal, and return the
+ * terminal it runs in. darwin/linux: typed into the shell waiting there, once
+ * `ready` resolves or `delayMs` has passed, as each caller always waited.
+ * win32: the CLI replaces that shell (startCliInTerminal), nothing typed.
+ */
+export async function launchIntoTerminal(
+  agent: AgentStatus,
+  ptyProcess: pty.IPty,
+  start: Launch,
+  opts: AgentTerminals & { delayMs?: number; ready?: (ptyProcess: pty.IPty) => Promise<void> },
+): Promise<pty.IPty> {
+  if (start.platform === 'win32') return startCliInTerminal(agent, start, opts);
+  if (opts.ready) await opts.ready(ptyProcess);
+  if (opts.delayMs) {
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        writeProgrammaticInput(ptyProcess, start.typedLine);
+        resolve();
+      }, opts.delayMs);
+    });
+  } else {
+    writeProgrammaticInput(ptyProcess, start.typedLine);
+  }
+  return ptyProcess;
+}
+
 async function initAgentPtyLocked(
   agent: AgentStatus,
   mainWindow: BrowserWindow | null,
@@ -980,7 +1113,41 @@ async function initAgentPtyLocked(
   // and the call it was queued behind may have just created the PTY it wanted.
   if (agent.ptyId && ptyProcesses.has(agent.ptyId)) return agent.ptyId;
 
-  const shell = '/bin/bash';
+  const cli = cliToStart.get(agent);
+  cliToStart.delete(agent);
+  const { ptyProcess, cwd } = cli ? spawnCli(agent, cli) : await spawnShell(agent);
+
+  const ptyId = uuidv4();
+  ptyProcesses.set(ptyId, ptyProcess);
+  agent.ptyCwd = cwd;
+  // A terminal again: a stop is over (core/agent-stop.ts), and a sleep too,
+  // the agent waking until its CLI is up (core/agent-asleep.ts).
+  clearStop(agent);
+  wakeFromSleep(agent);
+
+  attachAgentTerminal(agent, ptyId, ptyProcess, handleStatusChangeNotificationCallback, saveAgentsCallback);
+  return ptyId;
+}
+
+/** The CLI as the terminal's process, with the launch's folder and environment (win32: nothing is typed into a shell). */
+function spawnCli(agent: AgentStatus, launch: DirectLaunch): { ptyProcess: pty.IPty; cwd: string } {
+  ensureProjectTrusted(launch.cwd);
+  console.log(`Starting the CLI of agent ${agent.id} in ${launch.cwd}: ${launch.file}`);
+  const ptyProcess = spawnAgentPty({
+    binaryName: getProvider(agent.provider).binaryName,
+    shell: launch.file,
+    args: launch.commandLine,
+    runsCommand: true,
+    cols: 120,
+    rows: 30,
+    cwd: launch.cwd,
+    env: launch.env,
+  });
+  return { ptyProcess, cwd: launch.cwd };
+}
+
+/** The shell an agent's terminal waits in, with the environment its CLI will have. */
+async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; cwd: string }> {
   let cwd = agent.worktreePath || agent.projectPath;
 
   if (!fs.existsSync(cwd)) {
@@ -1043,14 +1210,13 @@ async function initAgentPtyLocked(
 
   const ptyProcess = spawnAgentPty({
     binaryName: agentProvider.binaryName,
-    shell,
-    args: ['-l'],
+    ...agentShell({ setting: savedSettings.terminalShell as string | undefined }),
+    runsCommand: false,
     cols: 120,
     rows: 30,
     cwd,
     env: {
-      ...process.env as { [key: string]: string },
-      PATH: fullPath,
+      ...withPath(process.env, fullPath, process.platform),
       ...providerEnvVars,
       // CLAUDE_MGR_API_URL is imposed by spawnAgentPty, on the one line that
       // starts a process, so the API-driven spawn cannot miss it as it did.
@@ -1059,15 +1225,17 @@ async function initAgentPtyLocked(
       ...tasmaniaEnv,
     },
   });
+  return { ptyProcess, cwd };
+}
 
-  const ptyId = uuidv4();
-  ptyProcesses.set(ptyId, ptyProcess);
-  agent.ptyCwd = cwd;
-  // A terminal again: a stop is over (core/agent-stop.ts), and a sleep too,
-  // the agent waking until its CLI is up (core/agent-asleep.ts).
-  clearStop(agent);
-  wakeFromSleep(agent);
-
+/** What an agent terminal's output and exit do, whichever process it runs. */
+function attachAgentTerminal(
+  agent: AgentStatus,
+  ptyId: string,
+  ptyProcess: pty.IPty,
+  handleStatusChangeNotificationCallback: (agent: AgentStatus, newStatus: string) => void,
+  saveAgentsCallback: () => void,
+): void {
   ptyProcess.onData((data) => {
     const agentData = agents.get(agent.id);
     if (agentData) {
@@ -1119,6 +1287,4 @@ async function initAgentPtyLocked(
     });
     scheduleTick();
   });
-
-  return ptyId;
 }

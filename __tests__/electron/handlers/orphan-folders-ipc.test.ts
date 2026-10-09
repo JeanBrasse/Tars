@@ -98,8 +98,16 @@ describe("the window's calls", () => {
     ].sort());
 
     const report = await handlers.get('system:removeOrphanFolders')!({}, listing.folders.map(f => f.path)) as { removed: number; kept: unknown[] };
-    expect(report.removed).toBe(2);
-    expect(report.kept).toEqual([]);
+    if (process.platform === 'win32') {
+      // Windows has no lsof and no /proc: whether a process works in a folder
+      // cannot be read there, so every folder is kept, as when lsof fails on
+      // macOS (processCwds), and each is still told as it goes.
+      expect(report.removed).toBe(0);
+      expect(report.kept.map(k => (k as { reason: string }).reason)).toEqual(['unknown-use', 'unknown-use']);
+    } else {
+      expect(report.removed).toBe(2);
+      expect(report.kept).toEqual([]);
+    }
     expect(fs.existsSync(owned)).toBe(true);
     const steps = pushed.filter(p => p.channel === 'system:orphanFolders:progress').map(p => p.payload as { done: number; total: number });
     expect(steps.map(s => [s.done, s.total])).toEqual([[1, 2], [2, 2]]);

@@ -27,6 +27,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { npmCommand } from './npm-command.mjs';
 
 const run = promisify(execFile);
 
@@ -249,7 +250,8 @@ function runEverything() {
 }
 
 function runSuite() {
-  const child = execFile('npx', ['playwright', 'test'], { cwd: process.cwd() });
+  const npx = npmCommand('npx', ['playwright', 'test']);
+  const child = execFile(npx.command, npx.args, { cwd: process.cwd() });
   child.stdout?.pipe(process.stdout);
   child.stderr?.pipe(process.stderr);
   return new Promise(resolve => child.on('close', code => resolve(code ?? 1)));

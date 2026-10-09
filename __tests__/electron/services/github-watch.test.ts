@@ -4,6 +4,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pollGithub, githubRepoOf, GH_READ_ARGS, pollProjects } from '../../../electron/services/github-watch';
 import { execFileSync } from 'node:child_process';
+import { skipOnWindows } from '../../setup/platform-limits';
+
+/** Why 9 and 10 cannot run on Windows. */
+const STAND_IN_GH_REASON = 'their stand-in gh is a sh script found on the PATH, and execFile(\'gh\') on Windows runs '
+  + 'gh.com or gh.exe only, so the machine\'s own gh would answer in its place (as fake-gh.ts measured); and the '
+  + 'bare PATH an app opened from the Dock gets is macOS\'s: tests 9 and 10 run on macOS, Linux and CI';
 
 /**
  * What Tars reads from GitHub for the event reports: PRs merged, and changes
@@ -115,7 +121,7 @@ describe('after a pause', () => {
   });
 });
 
-describe('the gh and git a real poll runs', () => {
+describe.skipIf(skipOnWindows(STAND_IN_GH_REASON))('the gh and git a real poll runs', () => {
   it('9. are found under the bare PATH of an app opened from the Dock', async () => {
     const home = os.homedir();
     // The first of the folders buildFullPath adds, ahead of /opt/homebrew/bin:
@@ -140,7 +146,7 @@ describe('the gh and git a real poll runs', () => {
   });
 });
 
-describe('a PR event of a project', () => {
+describe.skipIf(skipOnWindows(STAND_IN_GH_REASON))('a PR event of a project', () => {
   it('10. carries the project whose repository it was found in: a reply to its report goes to that project', async () => {
     const home = os.homedir();
     const bin = path.join(home, '.nvm', 'versions', 'node', 'v20.11.1', 'bin');

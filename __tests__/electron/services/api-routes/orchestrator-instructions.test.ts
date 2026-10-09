@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -71,6 +71,17 @@ import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { getSuperAgentInstructionsPath } from '../../../../electron/utils';
 import { RouteContext } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
 
 let ctx: RouteContext;
 

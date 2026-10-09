@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The Hermes dashboard's token moves from ~/.dorothy to ~/.tars-private (Noah's decision 6 of 2026-10-01,
@@ -36,8 +37,10 @@ describe('the dashboard token', () => {
 
     expect(fs.readFileSync(dorothyFile(), 'utf-8')).not.toContain('secret-dashboard-token');
     expect(fs.readFileSync(privateFile(), 'utf-8').trim()).toBe('secret-dashboard-token');
-    expect(fs.statSync(privateFile()).mode & 0o777).toBe(0o600);
-    expect(fs.statSync(path.dirname(privateFile())).mode & 0o777).toBe(0o700);
+    if (hasPosixModes()) {
+      expect(fs.statSync(privateFile()).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(path.dirname(privateFile())).mode & 0o777).toBe(0o700);
+    }
     expect(config.readHermesConnection().token).toBe('secret-dashboard-token');
     expect(config.usableHermesConnection()?.token).toBe('secret-dashboard-token');
   });

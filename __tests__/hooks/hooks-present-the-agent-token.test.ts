@@ -5,6 +5,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * Every hook post carries the token of the CLI it runs in, and logs where only
@@ -71,7 +72,7 @@ function runHook(env: Record<string, string>): Promise<number> {
   });
 }
 
-describe('a hook post', () => {
+describe.skipIf(shHooksNotShipped())('a hook post', () => {
   it('carries the token of the CLI it runs in', async () => {
     received.length = 0;
     await runHook({ CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_TOKEN: 'token-of-a1s-terminal', TARS_INSTANCE_ID: INSTANCE });

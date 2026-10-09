@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-keys-guard-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-keys-guard-${process.pid}-${Date.now()}`),
 }));
 
 vi.mock('os', async (importOriginal) => {

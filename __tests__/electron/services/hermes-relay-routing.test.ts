@@ -43,6 +43,17 @@ vi.mock('node-pty', () => ({
     };
   }),
 }));
+
+/**
+ * The terminal of an agent whose CLI is up, as Tars opens one. darwin and
+ * linux: a shell with claude in front, as node-pty names it (`process` above).
+ * win32: node-pty names only the terminal there (audit A6), so a CLI runs in a
+ * terminal whose own process it is (decision D2, cliRunningIn).
+ */
+const CLI_TERMINAL = process.platform === 'win32'
+  ? { shell: 'C:\\Users\\someone\\.local\\bin\\claude.exe', args: '', runsCommand: true }
+  : { shell: '/bin/bash', args: ['-l'] };
+
 vi.mock('electron', () => ({
   app: { getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), isPackaged: false, getVersion: () => '1.9.2' },
   BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
@@ -80,7 +91,7 @@ async function load() {
     initAgentPty: async () => { throw new Error('no launch in this test'); },
   });
   const agent = (id: string, name: string, projectPath: string, role?: 'orchestrator') => {
-    const term = spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: id } });
+    const term = spawnAgentPty({ binaryName: 'claude', ...CLI_TERMINAL, cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: id } });
     ptyProcesses.set(`pty-${id}`, term as unknown);
     // Its terminal opened in its project, as Tars opens one: a terminal elsewhere is stale, and is replaced.
     const a = { id, name, status: 'running', provider: 'claude', projectPath, role, ptyId: `pty-${id}`, ptyCwd: projectPath, skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
@@ -154,7 +165,7 @@ describe('"@project text"', () => {
 
   it('7. a project whose folder name holds a space is registered, and reached, under its dashed name', async () => {
     const SPACED = '/Users/someone/projects/My Project';
-    const term = spawnAgentPtyOf()({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: 'orch-spaced' } });
+    const term = spawnAgentPtyOf()({ binaryName: 'claude', ...CLI_TERMINAL, cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: 'orch-spaced' } });
     ptyProcesses.set('pty-orch-spaced', term as unknown);
     agents.set('orch-spaced', { id: 'orch-spaced', name: 'Spaced-Orchestrator', status: 'running', provider: 'claude', projectPath: SPACED, role: 'orchestrator', ptyId: 'pty-orch-spaced', ptyCwd: SPACED, skills: [], output: [], lastActivity: '' } as unknown as AgentStatus);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 
 import type { NewChatModalProps } from './types';
 import type { AgentCharacter, AgentProvider, TeamTemplateMember } from '@/types/electron';
@@ -32,7 +33,7 @@ const MODE_OPTIONS: SegmentedOption<CreationMode>[] = [
  * was a character to show; the mark beside the field is drawn from this name.
  */
 function generatedAgentName(projectPath: string): string {
-  const projectName = projectPath.split('/').pop() || 'project';
+  const projectName = lastPathPart(projectPath) || 'project';
   return `Agent on ${projectName}`;
 }
 
@@ -382,7 +383,7 @@ export default function NewChatModal({
           kind: isEditMode ? 'edit' : 'create',
           holder: holder.name || holder.id,
           newcomer: agentName.trim() || generatedAgentName(projectPath),
-          project: projectPath.split('/').pop() || projectPath,
+          project: lastPathPart(projectPath) || projectPath,
         });
         return;
       }
@@ -454,7 +455,7 @@ export default function NewChatModal({
     if (!canSubmitTeam({ projectPath, selectedCount: selectedMembers.length })) return;
     const lead = selectedMembers.find(m => m.role === 'orchestrator');
     if (lead) {
-      const projectName = projectPath.split('/').pop() || 'project';
+      const projectName = lastPathPart(projectPath) || 'project';
       const leadName = deployedMemberName(lead.name, projectPath);
       setDeploying(true);
       let holder: Awaited<ReturnType<typeof currentOrchestrator>>;

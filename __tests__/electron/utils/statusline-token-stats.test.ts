@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
  * ~/.dorothy/token-stats.json is written by the status line script and by
@@ -23,6 +24,7 @@ let script: string;
 let home: string;
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   // The status line runs on jq. A machine without it has no token stats at
   // all, and a case that skipped itself there would pass without running.
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
@@ -77,7 +79,7 @@ const NEW_SESSION = {
 // 7.5 s in the full suite at a load average of about 40 (QA's gate of #311,
 // 2026-10-05), past vitest's 5 s, and 6.8 s alone. 30 s, as the status line's
 // git cache cases have (statusline-gnu-stat.test.ts).
-describe('the status line writing token-stats.json', { timeout: 30_000 }, () => {
+describe.skipIf(shHooksNotShipped())('the status line writing token-stats.json', { timeout: 30_000 }, () => {
   it('starts again from an empty object when the file is empty', () => {
     fs.writeFileSync(statsFile(), '');
 

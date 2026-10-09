@@ -19,8 +19,8 @@ import * as path from 'node:path';
  */
 
 const { TMP_HOME } = vi.hoisted(() => {
-  const base = (process.env.TMPDIR || '/tmp').replace(/\/$/, '');
-  return { TMP_HOME: `${base}/tars-honcho-home-${process.pid}-${Date.now()}` };
+  const base = process.getBuiltinModule('node:os').tmpdir();
+  return { TMP_HOME: process.getBuiltinModule('node:path').join(base, `tars-honcho-home-${process.pid}-${Date.now()}`) };
 });
 
 vi.mock('os', async importOriginal => ({

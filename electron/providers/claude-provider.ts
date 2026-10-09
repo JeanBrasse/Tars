@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execFileSync } from 'child_process';
+import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import type {
   CLIProvider,
@@ -15,6 +15,7 @@ import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuo
 import { DATA_DIR } from '../constants';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
+import { usesNodeHooks, mergeNodeHooks, legacyShCommand } from '../utils/hook-command';
 
 export class ClaudeProvider implements CLIProvider {
   readonly id = 'claude' as const;
@@ -180,7 +181,7 @@ export class ClaudeProvider implements CLIProvider {
     };
   }
 
-  async configureHooks(hooksDir: string): Promise<void> {
+  async configureHooks(hooksDir: string, platform: NodeJS.Platform = process.platform): Promise<void> {
     const settingsPath = path.join(this.configDir, 'settings.json');
 
     type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> };
@@ -209,6 +210,14 @@ export class ClaudeProvider implements CLIProvider {
       const settings: Settings = current ?? {};
       if (!settings.hooks) {
         settings.hooks = {};
+      }
+
+      // Windows: the Node runner, not the .sh, which cannot run there (see hook-command.ts).
+      if (usesNodeHooks(platform)) {
+        const specs = hookFiles.map(({ type, file, matcher }) => ({
+          type, matcher, event: file.replace(/\.sh$/, ''), isLegacy: legacyShCommand(file, this.configDir, hooksDir),
+        }));
+        return mergeNodeHooks(settings.hooks, specs, hooksDir, 30) ? settings : undefined;
       }
 
       let updated = false;
@@ -261,14 +270,17 @@ export class ClaudeProvider implements CLIProvider {
       // quotes and handed the whole line to execSync (/bin/sh -c), where
       // $(...) and backticks inside an argument are still expanded - and one of
       // those args is `tasmaniaServerPath` straight out of app-settings.json.
-      execFileSync('claude', ['mcp', 'add', '-s', 'user', name, command, ...args], {
+      // execCliSync resolves the name first: on Windows claude is an npm
+      // claude.cmd or a claude.exe, and a bare name finds only the latter.
+      execCliSync('claude', ['mcp', 'add', '-s', 'user', name, command, ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
       console.log(`[claude] Registered MCP server ${name} via claude mcp add`);
       return;
-    } catch {
-      // Fallback: write to mcp.json
+    } catch (err) {
+      // Fallback: write to mcp.json, and say why rather than swallow it.
+      console.warn(`[claude] claude mcp add failed (${cliFailureText(err)}), writing mcp.json instead`);
     }
 
     // Through addMcpServerToJson, which every writer of this file shares: it
@@ -284,12 +296,14 @@ export class ClaudeProvider implements CLIProvider {
       // string here would expand $(...) and backticks inside the name. The add
       // path was fixed and its sibling a few lines below was not, which is the
       // whole shape of this bug class.
-      execFileSync('claude', ['mcp', 'remove', '-s', 'user', name], {
+      execCliSync('claude', ['mcp', 'remove', '-s', 'user', name], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
-    } catch {
-      // Ignore if doesn't exist
+    } catch (err) {
+      // A server that is not registered fails here, which is fine. A claude
+      // that cannot be started is said.
+      if (err instanceof CliNotRunnableError) console.warn(`[claude] claude mcp remove not run: ${err.message}`);
     }
 
     // Also clean mcp.json. Nothing is written when the server is not there.

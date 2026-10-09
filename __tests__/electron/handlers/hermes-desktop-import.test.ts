@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { moveTestHome } from '../../setup/test-home';
 
 /**
  * Import, in Settings > Hermes, copies the connection Hermes Desktop uses.
@@ -51,7 +52,13 @@ vi.mock('os', async importOriginal => ({
   homedir: () => home,
 }));
 
-const desktopDir = path.join(home, 'Library', 'Application Support', 'Hermes');
+// Where the handler looks on this platform (electron/platform): %APPDATA%\Hermes on
+// Windows, moved into this file's home with the rest of the profile there
+// (test-home.ts), or the import would read the machine's own Hermes Desktop.
+// Imported once `home` exists.
+const restoreProfile = process.platform === 'win32' ? moveTestHome(home) : () => {};
+const { hermesDesktopConfigPath } = await import('../../../electron/platform');
+const desktopDir = path.dirname(hermesDesktopConfigPath({ home }));
 const V1 = path.join(desktopDir, 'connection.json');
 const V2 = path.join(desktopDir, 'connections.json');
 
@@ -77,7 +84,10 @@ async function importDesktop() {
 }
 
 beforeEach(() => { fs.rmSync(desktopDir, { recursive: true, force: true }); });
-afterAll(() => { fs.rmSync(home, { recursive: true, force: true }); });
+afterAll(() => {
+  restoreProfile();
+  fs.rmSync(home, { recursive: true, force: true });
+});
 
 describe('importing Hermes Desktop\'s connection', () => {
   it('brings the primary\'s token when only connections.json holds it (1, 2)', async () => {

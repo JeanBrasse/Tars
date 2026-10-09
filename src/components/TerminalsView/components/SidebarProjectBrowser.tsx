@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import { FolderOpen } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import { STATUS_COLORS } from '../constants';
@@ -23,7 +24,7 @@ export default function SidebarProjectBrowser({ agents, onFocusPanel }: SidebarP
     }
     return Array.from(grouped.entries()).map(([path, projectAgents]) => ({
       path,
-      name: path.split('/').pop() || path,
+      name: lastPathPart(path) || path,
       agents: projectAgents,
     }));
   }, [agents]);

@@ -260,7 +260,10 @@ export class AmpProvider implements CLIProvider {
       if (!servers || typeof servers !== 'object') return false;
       const server = servers[name];
       if (!server) return false;
-      return JSON.stringify(server).includes(expectedServerPath);
+      // The path as JSON writes it too: a Windows path has every backslash
+      // doubled there, never matched, and was registered again at every launch.
+      const entry = JSON.stringify(server);
+      return entry.includes(expectedServerPath) || entry.includes(JSON.stringify(expectedServerPath).slice(1, -1));
     } catch {
       return false;
     }

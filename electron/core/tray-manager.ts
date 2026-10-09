@@ -1,7 +1,9 @@
-import { Tray, nativeImage, NativeImage } from 'electron';
+import { Tray, nativeImage, NativeImage, Menu, app } from 'electron';
 import * as path from 'path';
 import { toggleTrayPanel, destroyTrayPanel } from './tray-panel-manager';
 import { setTrayAttentionCallback } from '../utils/agents-tick';
+import { revealMainWindow } from './window-manager';
+import { isWindowsShell } from '../platform/desktop-shell';
 
 let tray: Tray | null = null;
 let normalIcon: NativeImage | null = null;
@@ -49,7 +51,50 @@ function createBadgeIcon(base: NativeImage): NativeImage {
   return nativeImage.createFromBitmap(bitmap, { width: w, height: h, scaleFactor: 2.0 });
 }
 
+/** A file in electron/resources, outside the asar archive in production. */
+function resourcePath(name: string): string {
+  return path.join(__dirname, '..', '..', 'resources', name).replace('app.asar', 'app.asar.unpacked');
+}
+
+let contextMenu: Menu | null = null;
+
+/**
+ * The tray's right-click menu on Windows: the only way to quit once closing
+ * the window hides it (desktop-lifecycle.ts). Quit Tars is app.quit(), so
+ * before-quit saves the fleet and kills every terminal, as it always has.
+ */
+export function trayContextMenu(): Menu {
+  contextMenu ??= Menu.buildFromTemplate([
+    { label: 'Show Tars', click: () => revealMainWindow() },
+    { type: 'separator' },
+    { label: 'Quit Tars', click: () => app.quit() },
+  ]);
+  return contextMenu;
+}
+
+/**
+ * Windows: the mark as a multi-size .ico (16 to 48 px, pixel-snapped, drawn
+ * from public/icon.svg), so each DPI gets its own
+ * pixels instead of a resampled PNG of the old prompt; the attention badge is
+ * the same grid with today's dot, drawn ahead of time into its own .ico.
+ */
+function initWindowsTray() {
+  normalIcon = nativeImage.createFromPath(resourcePath('tray.ico'));
+  badgeIcon = nativeImage.createFromPath(resourcePath('tray-attention.ico'));
+  tray = new Tray(normalIcon);
+  tray.setToolTip('Tars');
+  tray.setContextMenu(trayContextMenu());
+  tray.on('click', () => {
+    if (tray) toggleTrayPanel(tray.getBounds());
+  });
+  setTrayAttentionCallback(updateTrayAttention);
+}
+
 export function initTray() {
+  if (isWindowsShell(process.platform)) {
+    initWindowsTray();
+    return;
+  }
   // Use the @2x image with scaleFactor 2.0 so macOS gets full-resolution
   // pixels on retina displays instead of upscaling the tiny 1x image.
   let icon2xPath = path.join(__dirname, '..', '..', 'resources', 'trayColor@2x.png');
@@ -89,6 +134,15 @@ export function updateTrayAttention(hasWaiting: boolean): void {
     tray.setImage(normalIcon);
     showingBadge = false;
   }
+}
+
+/**
+ * The tray icon, or null before initTray. Read by the Windows E2E spec
+ * (e2e/desktop-shell.win32.spec.ts) for the icon's bounds, which place the
+ * tray panel it opens.
+ */
+export function getTray(): Tray | null {
+  return tray;
 }
 
 export function rebuildTrayMenu() {

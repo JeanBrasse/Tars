@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as ts from 'typescript';
 
@@ -756,9 +757,18 @@ describe("Claude's own files, written only through updateSharedJsonSync", () => 
 });
 
 describe('the scan, on planted sources', () => {
-  const root = '/planted';
-  const scan = (files: Record<string, string>) =>
-    scanClaudeFileWriters(root, new Map(Object.entries(files).map(([f, text]) => [path.join(root, f), text])));
+  // Resolved, so it names a drive on Windows as every file the imports resolve to does.
+  const root = path.resolve('/planted');
+  // The sites spelled with `/`, as below, whatever the platform's separator.
+  const posix = (site: string) => site.split(path.sep).join('/');
+  const scan = (files: Record<string, string>) => {
+    const found = scanClaudeFileWriters(root, new Map(Object.entries(files).map(([f, text]) => [path.join(root, f), text])));
+    return {
+      ...found,
+      violations: found.violations.map(posix),
+      helperWrites: found.helperWrites.map(w => ({ ...w, site: posix(w.site) })),
+    };
+  };
   const header = "import * as fs from 'fs';\nimport * as os from 'os';\nimport * as path from 'path';\n";
 
   it('catches a direct write, a rename onto the file, and a write through fs.promises', () => {
@@ -851,9 +861,13 @@ export function enableTheOldWay() { fs.writeFileSync(SETTINGS, '{}'); }
   });
 
   it('catches a hook that writes one of them, and not one that reads it', () => {
-    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'tars-hook-scan-'));
-    fs.writeFileSync(path.join(dir, 'reads.sh'), 'jq -r .model "$HOME/.claude/settings.json" 2>/dev/null\n');
-    fs.writeFileSync(path.join(dir, 'writes.sh'), '#!/bin/bash\njq \'.x = 1\' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json"\nmv /tmp/x ~/.claude.json\n');
-    expect(hookWrites(dir)).toEqual(['writes.sh:2', 'writes.sh:3']);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-hook-scan-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'reads.sh'), 'jq -r .model "$HOME/.claude/settings.json" 2>/dev/null\n');
+      fs.writeFileSync(path.join(dir, 'writes.sh'), '#!/bin/bash\njq \'.x = 1\' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json"\nmv /tmp/x ~/.claude.json\n');
+      expect(hookWrites(dir)).toEqual(['writes.sh:2', 'writes.sh:3']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

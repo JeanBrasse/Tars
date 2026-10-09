@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -47,7 +47,7 @@ import * as path from 'node:path';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-discord-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-discord-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn>; say: (data: string) => void };
@@ -132,7 +132,21 @@ import { registerDiscordHandlers } from '../../../electron/handlers/discord-hand
 import { registerDiscordRoutes } from '../../../electron/services/api-routes/discord-routes';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
-const PROJECT = path.join(tmpHome, 'projects', 'atlas');
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
+
+// Joined the way the linux this file pins spells a path. On a Windows host
+// path.join writes a backslash, which a linux reader of the path keeps as part
+// of a folder name; darwin and linux get the same string either way.
+const PROJECT = path.posix.join(tmpHome, 'projects', 'atlas');
 
 function baseSettings(): AppSettings {
   return {
@@ -230,6 +244,16 @@ afterEach(() => {
   stopDiscordBot();
 });
 
+/**
+ * The cases that resume a conversation read its transcript under Claude's
+ * folder for the project, named as darwin and linux name it (resume-session.ts:
+ * `/` and `.` to `-`). This file runs as linux on any host; on a Windows
+ * host the project is a Windows path, whose `:` and `\` no folder name can
+ * hold, so the transcript those cases resume from has nowhere to go. They run
+ * on macOS and Linux; the Windows name is held by resume-session.test.ts.
+ */
+const NO_POSIX_TRANSCRIPT_FOLDER = process.platform === 'win32';
+
 describe('who the Discord bot answers', () => {
   it('answers an allowed member who mentions it, and signs in with the saved token', async () => {
     expect(dc.logins).toEqual(['dc-bot-token']);
@@ -305,7 +329,7 @@ describe('what the Discord bot says', () => {
     expect(said()[0]).toContain('📝 3 sessions');
   });
 
-  it('starts an agent cold, resuming its last conversation, and says so', async () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('starts an agent cold, resuming its last conversation, and says so', async () => {
     const rest = agents.get('agent-rest')!;
     rest.resumableSessionId = '0b7f3c1e-5d2a-4e8b-9c6f-1a2b3c4d5e6f';
     const transcript = transcriptPath(rest.projectPath, rest.resumableSessionId);

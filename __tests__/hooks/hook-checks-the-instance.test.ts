@@ -5,6 +5,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * A hook sends its terminal's token only to the Tars that spawned its CLI
@@ -119,7 +120,8 @@ function runHook(env: Record<string, string>): Promise<{ code: number; ms: numbe
 const withToken = () => received.filter(r => r.authorization && r.authorization !== 'Bearer ');
 const env = { CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE };
 
-describe('a hook, before it sends its token', () => {
+// The Node runner's side of the same list: node-hook-checks-the-instance.test.ts.
+describe.skipIf(shHooksNotShipped())('a hook, before it sends its token', () => {
   it('5. sends it to the Tars that spawned its CLI', async () => {
     mode = 'tars';
     await runHook(env);

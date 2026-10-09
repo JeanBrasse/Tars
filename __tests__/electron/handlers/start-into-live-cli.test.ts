@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -22,7 +22,7 @@ import * as path from 'node:path';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-start-live-cli-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-start-live-cli-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = {
@@ -88,6 +88,17 @@ import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { scheduleTick } from '../../../electron/utils/agents-tick';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
+
 const project = path.join(tmpHome, 'project');
 
 function deps(overrides: Record<string, unknown> = {}): IpcHandlerDependencies {
@@ -111,7 +122,7 @@ function deps(overrides: Record<string, unknown> = {}): IpcHandlerDependencies {
 /** An agent whose terminal is open, spawned the way every agent terminal is. */
 function agentWithTerminal(status: AgentStatus['status'], args = ['-l']): { agent: AgentStatus; terminal: FakePty } {
   const terminal = spawnAgentPty({
-    binaryName: 'claude', shell: '/bin/bash', args, cwd: project, cols: 120, rows: 30,
+    binaryName: 'claude', shell: '/bin/bash', args, runsCommand: args.includes('-c'), cwd: project, cols: 120, rows: 30,
     env: { CLAUDE_AGENT_ID: 'agent-live' },
   }) as unknown as FakePty;
   ptyProcesses.set('pty-live', terminal as never);

@@ -5,6 +5,7 @@ import { DATA_DIR } from '../../constants';
 import { ReportBudget } from './budget';
 import { errorReportOptions } from './options';
 import type { ReportFacts } from './report';
+import { errorReportsAvailable } from '../../platform/error-reports';
 
 /**
  * Error reports to Sentry, off unless the user turns them on in Settings
@@ -102,11 +103,12 @@ function guardRendererBridge(): void {
   }
 }
 
-export function startErrorReports(isEnabled: () => boolean): { sync(): Promise<void> } {
+/** Never on a platform whose build may not send (errorReportsAvailable: not on win32). */
+export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Platform = process.platform): { sync(): Promise<void> } {
   let starting: Promise<void> | undefined;
   const sync = (): Promise<void> => {
     if (starting) return starting;
-    if (!isEnabled()) return Promise.resolve();
+    if (!errorReportsAvailable(platform) || !isEnabled()) return Promise.resolve();
     starting = (async () => {
       try {
         const sentry = await import('@sentry/electron/main');

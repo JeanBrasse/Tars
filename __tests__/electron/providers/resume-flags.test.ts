@@ -14,7 +14,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 // Read by the providers' modules as they load, so it is set before any import.
 const { tmpDir } = vi.hoisted(() => ({
-  tmpDir: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-resume-flags-${process.pid}-${Date.now()}`,
+  tmpDir: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-resume-flags-${process.pid}-${Date.now()}`),
 }));
 
 vi.mock('os', async (importOriginal) => {

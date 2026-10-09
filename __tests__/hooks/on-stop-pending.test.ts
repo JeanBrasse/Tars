@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * on-stop.sh tells Tars what the agent left waiting at its rest (QA's gate of #322). Claude Code 2.1.289 hands the
@@ -46,7 +47,7 @@ async function stop(input: Record<string, unknown>): Promise<Record<string, unkn
   return received[0];
 }
 
-describe('on-stop.sh', () => {
+describe.skipIf(shHooksNotShipped())('on-stop.sh', () => {
   it('1. counts the crons and the background tasks still running at the rest', async () => {
     const post = await stop({
       session_crons: [{ id: 'loop1', schedule: '0 * * * *', recurring: false, prompt: '/loop watch the CI' }],

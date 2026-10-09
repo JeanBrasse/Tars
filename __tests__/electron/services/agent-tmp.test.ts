@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { TMP_ROOT, agentTmpEnv, enforceTmpRetention, shortIdOf } from '../../../electron/services/agent-tmp';
 import { DATA_DIR } from '../../../electron/constants';
+import { hasPosixModes } from '../../setup/platform-limits';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * A durable temporary folder per agent (RD-REDEMARRAGE.md, 2.1; Noah's yes of 2026-10-05): macOS empties /private/tmp
@@ -95,14 +97,15 @@ describe("an agent's folder", () => {
 
   it('3. is there before the CLI starts, its owner alone, and a planted link is replaced, not followed', () => {
     const id = 'worker';
-    fs.symlinkSync(outside, path.join(root, shortIdOf(id)));
+    // Only where this account may make a link (symlink-privilege.ts): the folders are checked everywhere.
+    if (!cannotSymlink()) fs.symlinkSync(outside, path.join(root, shortIdOf(id)));
 
     const env = agentTmpEnv(id, root);
 
     for (const dir of [path.dirname(env.TMPDIR), env.TMPDIR, env.CLAUDE_CODE_TMPDIR]) {
       const st = fs.lstatSync(dir);
       expect(st.isDirectory() && !st.isSymbolicLink()).toBe(true);
-      expect(st.mode & 0o777).toBe(0o700);
+      if (hasPosixModes()) expect(st.mode & 0o777).toBe(0o700);
     }
     expect(fs.readdirSync(outside)).toEqual([]);
   });
@@ -179,7 +182,7 @@ describe('the retention', () => {
     expect(exists(`${shortIdOf('gone-recently')}/t/a.txt`)).toBe(true);
   });
 
-  it('8. never follows a link: what it points at is neither measured nor deleted, only the link goes', async () => {
+  it.skipIf(cannotSymlink())('8. never follows a link: what it points at is neither measured nor deleted, only the link goes', async () => {
     fs.writeFileSync(path.join(outside, 'precious.txt'), Buffer.alloc(50_000));
     const at = new Date(NOW - 40 * DAY);
     fs.utimesSync(path.join(outside, 'precious.txt'), at, at);
@@ -198,7 +201,7 @@ describe('the retention', () => {
     expect(result.totalBytes).toBeLessThan(50_000);
   });
 
-  it('8. a young link to a large folder weighs as the link it is, so nothing is deleted for what lies behind it', async () => {
+  it.skipIf(cannotSymlink())('8. a young link to a large folder weighs as the link it is, so nothing is deleted for what lies behind it', async () => {
     fs.writeFileSync(path.join(outside, 'large.bin'), Buffer.alloc(200_000));
     put(`${W()}/t/keep.txt`, 10, 1);
     fs.symlinkSync(outside, path.join(root, W(), 't', 'link-to-large'));
@@ -211,7 +214,7 @@ describe('the retention', () => {
     expect(fs.existsSync(path.join(outside, 'large.bin'))).toBe(true);
   });
 
-  it('8. a root that is a link is left alone, and the pass says so', async () => {
+  it.skipIf(cannotSymlink())('8. a root that is a link is left alone, and the pass says so', async () => {
     const linked = path.join(path.dirname(root), 'linked-tmp');
     fs.symlinkSync(outside, linked);
     fs.writeFileSync(path.join(outside, 'precious.txt'), 'x');
@@ -247,7 +250,7 @@ describe('the retention', () => {
 });
 
 describe('a root swapped for a link while the pass runs', () => {
-  it('11. deletes nothing through it, and says so', async () => {
+  it.skipIf(cannotSymlink())('11. deletes nothing through it, and says so', async () => {
     const gone = shortIdOf('gone');
     put(`${gone}/t/old.txt`, 10, 9);
     age(gone, 9);

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * Tars's side of the relay to the user's Telegram through their Hermes (DESIGN-RELAIS-HERMES-V2.md, step 2): the
@@ -97,8 +98,10 @@ describe('a send', () => {
 
     const list = JSON.parse(fs.readFileSync(privateFile('relay-sent.json'), 'utf-8'));
     expect(list).toEqual([expect.objectContaining({ messageId: (sent as { messageId: string }).messageId, ref: 'question:q-1', kind: 'question', projectPath: PROJECT })]);
-    expect(fs.statSync(privateFile('relay-sent.json')).mode & 0o777).toBe(0o600);
-    expect(fs.statSync(path.join(os.homedir(), '.tars-private')).mode & 0o777).toBe(0o700);
+    if (hasPosixModes()) {
+      expect(fs.statSync(privateFile('relay-sent.json')).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(path.join(os.homedir(), '.tars-private')).mode & 0o777).toBe(0o700);
+    }
     expect(fs.existsSync(path.join(os.homedir(), '.dorothy', 'relay-sent.json'))).toBe(false);
   });
 

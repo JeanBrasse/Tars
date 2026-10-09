@@ -48,8 +48,11 @@ vi.mock('https', () => ({
 import { initTelegramBotService, initTelegramBot, stopTelegramBot } from '../../../electron/services/telegram-bot';
 import { TELEGRAM_DOWNLOADS_DIR } from '../../../electron/constants';
 import type { AppSettings } from '../../../electron/types';
+import { makeUnwritable } from '../../setup/file-access';
 
 const uncaught: Error[] = [];
+/** Gives the downloads folder its writes back, once a test has taken them. */
+let writable: (() => void) | undefined;
 const record = (err: Error) => { uncaught.push(err); };
 
 const settings = {
@@ -77,14 +80,15 @@ afterEach(async () => {
   await new Promise(resolve => setTimeout(resolve, 250));
   process.off('uncaughtException', record);
   stopTelegramBot();
-  fs.chmodSync(TELEGRAM_DOWNLOADS_DIR, 0o700);
+  writable?.();
+  writable = undefined;
   expect(uncaught.map(e => String(e)), 'an error reached the top of the process').toEqual([]);
 });
 
 describe('a Telegram photo that cannot be saved', () => {
   it('tells the chat the download failed, and throws nothing', async () => {
     fs.mkdirSync(TELEGRAM_DOWNLOADS_DIR, { recursive: true });
-    fs.chmodSync(TELEGRAM_DOWNLOADS_DIR, 0o500);
+    writable = makeUnwritable(TELEGRAM_DOWNLOADS_DIR, 0o700);
     const onPhoto = bot.handlers.get('photo');
     expect(onPhoto, 'the bot registered no photo handler').toBeDefined();
 

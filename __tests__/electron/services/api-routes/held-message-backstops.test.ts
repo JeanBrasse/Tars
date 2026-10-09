@@ -64,6 +64,16 @@ import type { AgentStatus, AppSettings } from '../../../../electron/types';
 
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-held-backstops-'));
 
+/**
+ * The terminal of an agent whose CLI is up, as Tars opens one. darwin and
+ * linux: a shell with claude in front, as node-pty names it (`process` below).
+ * win32: node-pty names only the terminal there (audit A6), so a CLI runs in a
+ * terminal whose own process it is (decision D2, cliRunningIn).
+ */
+const CLI_TERMINAL = process.platform === 'win32'
+  ? { shell: 'C:\\Users\\someone\\.local\\bin\\claude.exe', args: '', runsCommand: true }
+  : { shell: '/bin/bash', args: ['-l'] };
+
 let routes: RouteApp;
 let ctx: RouteContext;
 let written: string[];
@@ -99,7 +109,7 @@ beforeEach(() => {
   // onExit: spawnAgentPty drops what a terminal held when it exits (#128).
   terminal = { write: (data: string) => { written.push(data); }, process: '2.1.280', onExit: () => ({ dispose() {} }) };
   vi.mocked(pty.spawn).mockReturnValueOnce(terminal as never);
-  spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 80, rows: 24, env: {} });
+  spawnAgentPty({ binaryName: 'claude', ...CLI_TERMINAL, cwd: project, cols: 80, rows: 24, env: {} });
   ptyProcesses.set('pty-worker', terminal as never);
 
   routes = {
@@ -150,7 +160,7 @@ function orchTerminal(): void {
   orchWritten = [];
   const t = { write: (data: string) => { orchWritten.push(data); }, process: '2.1.280', onExit: () => ({ dispose() {} }) };
   vi.mocked(pty.spawn).mockReturnValueOnce(t as never);
-  spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 80, rows: 24, env: {} });
+  spawnAgentPty({ binaryName: 'claude', ...CLI_TERMINAL, cwd: project, cols: 80, rows: 24, env: {} });
   ptyProcesses.set('pty-orch', t as never);
   agents.get('orch')!.ptyId = 'pty-orch';
 }

@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { hermesDesktopConfigPath, tailscaleCandidates } from '../platform';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
@@ -41,9 +42,9 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-/** Where Hermes Desktop keeps its own connection config on macOS. */
-const HERMES_DESKTOP_CONFIG = path.join(
-  os.homedir(), 'Library', 'Application Support', 'Hermes', 'connection.json',
+/** Where Hermes Desktop keeps its own connection config (per platform: see electron/platform). */
+const HERMES_DESKTOP_CONFIG = hermesDesktopConfigPath(
+  { home: os.homedir() },
 );
 /**
  * Its v2 registry, beside it. connection.json is the v1 file, which Hermes
@@ -219,18 +220,17 @@ interface TailscaleInfo {
   serveConfigured: boolean;
 }
 
-const TAILSCALE_PLACES = ['tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'];
-
 /**
- * Where to look for `tailscale`. A development run may name the one binary to
- * ask, or none with an empty value (DOROTHY_TAILSCALE_BIN): the e2e fixture
+ * Where to look for `tailscale`: where this platform installs it
+ * (tailscaleCandidates). A development run may name the one binary to ask,
+ * or none with an empty value (DOROTHY_TAILSCALE_BIN): the e2e fixture
  * does, since two of the places are absolute paths no sandbox HOME hides, and
  * a sandbox asked the Mac's own Tailscale, whose MagicDNS name ended up in the
  * reference screenshots (QA's note on #222). A packaged Tars never reads it.
  */
 function tailscalePlaces(): string[] {
   const named = app?.isPackaged ? undefined : process.env.DOROTHY_TAILSCALE_BIN;
-  if (named === undefined) return TAILSCALE_PLACES;
+  if (named === undefined) return tailscaleCandidates();
   return named.trim() ? [named] : [];
 }
 

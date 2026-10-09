@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { pathName, tildePath } from '@/lib/display-path';
 import { useRouter } from 'next/navigation';
 import { AlertCircle } from 'lucide-react';
 import { BrandSpinner, PageHeader } from '@/components/ui';
@@ -95,7 +96,7 @@ async function restartAgent(id: string): Promise<string | null> {
 }
 
 /** A project's path as the head prints it, from the home folder on either system. */
-const shortPath = (p?: string) => (p ? p.replace(/^\/(Users|home)\/[^/]+/, '~') : undefined);
+const shortPath = (p?: string) => (p ? tildePath(p, { bareHome: true }) : undefined);
 
 /**
  * The open room, right of the left column: its panel under its head, then the
@@ -415,10 +416,9 @@ export default function ChatPage() {
         // A room you are not in has the bus's own counts of what waits in it
         // (PR 169), by delivery: its strip's rows wait for it to open.
         const { tone, counts } = roomCounts(agentsHere, open, room.pending);
-        const parts = (room.projectPath ?? '').split('/').filter(Boolean);
         return {
           id: room.id,
-          name: room.title || parts[parts.length - 1] || room.id,
+          name: room.title || pathName(room.projectPath ?? '') || room.id,
           tone,
           time: timeLabel(room.lastMessageAt),
           counts,

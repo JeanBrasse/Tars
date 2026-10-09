@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * permission-request.sh says when the dialog opened (the Audit's re-check of
@@ -21,9 +22,11 @@ const HOOK = path.join(__dirname, '../../hooks/permission-request.sh');
 const received: Array<Record<string, unknown>> = [];
 let server: http.Server;
 let port = 0;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-opened-at-'));
+/** Made in beforeAll, so a file whose tests all skip makes nothing it would not remove. */
+let tmp: string;
 
 beforeAll(async () => {
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-opened-at-'));
   server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', c => { raw += c; });
@@ -32,9 +35,12 @@ beforeAll(async () => {
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
   port = (server.address() as { port: number }).port;
 });
-afterAll(() => new Promise<void>(r => server.close(() => r())));
+afterAll(async () => {
+  await new Promise<void>(r => server.close(() => r()));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
 
-describe('permission-request.sh', () => {
+describe.skipIf(shHooksNotShipped())('permission-request.sh', () => {
   it('1, 2. sends when the dialog opened, in milliseconds, taken by the script itself', async () => {
     received.length = 0;
     const before = Date.now();

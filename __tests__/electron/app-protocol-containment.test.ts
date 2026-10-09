@@ -72,7 +72,23 @@ describe('app:// path containment', () => {
     // resolve to a file outside the bundle either.
     expect(resolveRequest(BASE, 'app://-/a/..%252f..%252fsecret').allowed).toBe(true);
     // ...and it stays inside, which is the property that matters.
-    expect(resolveRequest(BASE, 'app://-/a/..%252f..%252fsecret').filePath.startsWith(BASE)).toBe(true);
+    // BASE in the platform's own spelling, as path.join writes the file path.
+    expect(resolveRequest(BASE, 'app://-/a/..%252f..%252fsecret').filePath.startsWith(path.normalize(BASE))).toBe(true);
+  });
+
+  it('refuses the Windows spellings of an escape, or keeps them inside the bundle', () => {
+    const inside = (filePath: string) => filePath.startsWith(path.normalize(BASE) + path.sep);
+    // `%5c` is `\`: a separator on Windows, where it climbs out and is refused;
+    // an ordinary character of a file name elsewhere, where it stays inside.
+    const climb = resolveRequest(BASE, 'app://-/a/..%5c..%5c..%5c..%5c..%5cUsers%5cnoah%5c.dorothy%5capp-settings.json');
+    if (process.platform === 'win32') expect(climb.allowed).toBe(false);
+    else expect(inside(climb.filePath)).toBe(true);
+    // A drive and a UNC name are joined under the bundle, never taken as roots.
+    for (const url of ['app://-/C:%5cWindows%5cwin.ini', 'app://-/%5c%5clocalhost%5cC$%5csecret']) {
+      const { filePath, allowed } = resolveRequest(BASE, url);
+      expect(allowed, url).toBe(true);
+      expect(inside(filePath), `${url} resolved to ${filePath}`).toBe(true);
+    }
   });
 
   it('refuses a sibling directory that merely shares the prefix', () => {

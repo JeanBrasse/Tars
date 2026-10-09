@@ -34,6 +34,10 @@ const BINARIES: { key: BinaryKey; label: string }[] = [
   { key: 'minimax', label: 'MiniMax' },
 ];
 
+// The PATH separator of the machine the app runs on: `;` on Windows, where
+// every drive holds a `:` and `C:\tools` split on colons became `C` and `\tools`.
+const pathListSeparator = () => (typeof window !== 'undefined' && window.electronAPI?.platform === 'win32' ? ';' : ':');
+
 const EMPTY_CLI_PATHS: CLIPaths = {
   claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '',
   amp: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [],
@@ -46,12 +50,12 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSect
   // The extra directories are one PATH string in the row, so the text has to
   // survive a trailing separator the parsed array would drop.
   const [additionalText, setAdditionalText] = useState(
-    (appSettings.cliPaths?.additionalPaths || []).join(':')
+    (appSettings.cliPaths?.additionalPaths || []).join(pathListSeparator())
   );
 
   useEffect(() => {
     setLocalPaths(appSettings.cliPaths || EMPTY_CLI_PATHS);
-    setAdditionalText((appSettings.cliPaths?.additionalPaths || []).join(':'));
+    setAdditionalText((appSettings.cliPaths?.additionalPaths || []).join(pathListSeparator()));
   }, [appSettings.cliPaths]);
 
   const handleDetectPaths = async () => {
@@ -84,7 +88,7 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSect
     setAdditionalText(value);
     setLocalPaths(prev => ({
       ...prev,
-      additionalPaths: value.split(':').map(p => p.trim()).filter(Boolean),
+      additionalPaths: value.split(pathListSeparator()).map(p => p.trim()).filter(Boolean),
     }));
   };
 

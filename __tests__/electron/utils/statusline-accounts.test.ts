@@ -19,11 +19,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 let script: string;
 let home: string;
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
@@ -57,7 +59,7 @@ function render(account: string | undefined, rateLimits: unknown = LIMITS) {
 const dataFile = (...p: string[]) => path.join(home, '.dorothy', ...p);
 const readJson = (f: string) => JSON.parse(fs.readFileSync(f, 'utf-8'));
 
-describe('the counters the status line leaves, per account', () => {
+describe.skipIf(shHooksNotShipped())('the counters the status line leaves, per account', () => {
   it('with no account named, writes rate-limits.json as before, and default.json', () => {
     const r = render(undefined);
     expect(readJson(dataFile('rate-limits.json')), r.stderr).toEqual(LIMITS);
