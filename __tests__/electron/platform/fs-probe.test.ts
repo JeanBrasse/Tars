@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *
  * `%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe` (and pwsh.exe, python.exe,
  * winget.exe when they come from the Store) is a reparse point CreateProcess
- * starts, whose target Node cannot open: measured on this machine,
+ * starts, whose target Node cannot open: measured on Windows 11,
  * `fs.statSync` on wt.exe throws EACCES and `fs.lstatSync` answers a link of
  * 93 bytes. isFile said false, so findOnPath, resolveShell and resolveCliBinary
  * could not see any of them.

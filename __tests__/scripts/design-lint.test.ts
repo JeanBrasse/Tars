@@ -2,7 +2,8 @@ import { describe, it, expect, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { makeUnreadable } from '../setup/file-access';
 
 /**
  * `npm run lint:design`, run on throwaway trees laid out like src/ and never on
@@ -21,10 +22,11 @@ import { execFile, execFileSync } from 'node:child_process';
 
 const SCRIPT = path.join(__dirname, '../../scripts/design-lint.mjs');
 const made: string[] = [];
-const locked: string[] = [];
+/** What gives each locked file or folder back its reads, before the trees go. */
+const unlocks: Array<() => void> = [];
 
 afterAll(() => {
-  for (const file of locked) execFileSync('icacls', [file, '/remove:d', EVERYONE], { stdio: 'ignore' });
+  for (const unlock of unlocks) unlock();
   for (const dir of made) {
     fs.chmodSync(dir, 0o755);
     fs.rmSync(dir, { recursive: true, force: true });
@@ -36,23 +38,16 @@ function write(root: string, file: string, content: string | Buffer) {
   fs.writeFileSync(path.join(root, file), content);
 }
 
-/** The well-known SID of Everyone, which holds this process's own account. */
-const EVERYONE = '*S-1-1-0';
-
 /**
- * Makes `file` impossible to open for reading: mode 000 on POSIX, and on
- * Windows, where chmod only sets the read-only flag, a deny-read-data entry for
- * Everyone. afterAll lifts it before the tree is removed.
+ * Makes a file impossible to read, or a folder impossible to list: mode 000 on
+ * POSIX, and on Windows, where chmod only sets the read-only flag, its data
+ * denied to this account (file-access.ts). afterAll lifts it before the tree is
+ * removed.
  */
-function lockAgainstReading(file: string) {
-  if (process.platform === 'win32') {
-    execFileSync('icacls', [file, '/deny', `${EVERYONE}:(RD)`], { stdio: 'ignore' });
-    locked.push(file);
-  } else {
-    fs.chmodSync(file, 0o000);
-  }
+function lockAgainstReading(target: string, { folder = false } = {}) {
+  unlocks.push(makeUnreadable(target, folder ? 0o755 : 0o644));
   // The witness: a lock that does not lock would let this case pass for the wrong reason.
-  expect(() => fs.readFileSync(file)).toThrow();
+  expect(() => (folder ? fs.readdirSync(target) : fs.readFileSync(target))).toThrow();
 }
 
 /** One line per rule, as text: grep reads characters, not syntax. */
@@ -264,6 +259,18 @@ describe.concurrent('a lint that could not search', () => {
     const root = cleanTree();
     write(root, 'src/components/Locked.tsx', 'export const Locked = () => <div className="shadow-lg" />;\n');
     lockAgainstReading(path.join(root, 'src/components/Locked.tsx'));
+
+    const run = await lint(root);
+
+    expect(run.output).toContain('✗ could not read everything under src/ (grep exited 2)');
+    expect(run.output).not.toContain('✓');
+    expect(run.status).toBe(1);
+  });
+
+  it.skipIf(process.getuid?.() === 0)('fails when grep cannot open a folder, even one holding the only violation', async ({ expect }) => {
+    const root = cleanTree();
+    write(root, 'src/components/locked/Shadow.tsx', 'export const Shadow = () => <div className="shadow-lg" />;\n');
+    lockAgainstReading(path.join(root, 'src/components/locked'), { folder: true });
 
     const run = await lint(root);
 
