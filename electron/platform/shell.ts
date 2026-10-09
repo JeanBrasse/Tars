@@ -6,8 +6,8 @@ import { findOnPath } from './cli-binary';
 
 /**
  * The shell a human terminal runs (the quick terminal, `pty:create`, the
- * installers), and its arguments. Decision D3. Agents get no shell at all
- * under decision D2 (see launch.ts).
+ * installers), and its arguments. On Windows an agent gets no shell at all:
+ * its CLI is the terminal's own process (see launch.ts).
  *
  * darwin/linux: exactly defaultShell() and ['-l'], as every caller has today.
  * win32: the user's setting, else pwsh.exe (PowerShell 7) when it is on the
@@ -67,9 +67,9 @@ export function shellArgs(shell: string, platform: NodeJS.Platform = process.pla
  * The shell an agent's terminal waits in until its CLI starts.
  *
  * darwin/linux: `/bin/bash -l`, as always, since the launch line typed into it
- * is bash. win32: Tars types nothing into it (decision D2: a start replaces it
- * with the CLI), so it is the shell a person gets there (decision D3), the
- * user's terminalShell setting first, with that shell's own arguments.
+ * is bash. win32: Tars types nothing into it (a start replaces it with the
+ * CLI), so it is the shell a person gets there, the user's terminalShell
+ * setting first, with that shell's own arguments.
  */
 export function agentShell(opts: {
   setting?: string;
