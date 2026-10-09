@@ -62,6 +62,15 @@ const KEPT: Record<string, string> = {
   // home-isolation.ts points it at a throwaway directory for every file;
   // removing it outright leaves os.homedir() with nothing sane to answer.
   HOME: 'os.homedir() backs ~/.claude.json and ~/.dorothy paths under test',
+  // The same on Windows, where os.homedir() reads USERPROFILE and Electron's
+  // folders sit under APPDATA / LOCALAPPDATA: home-isolation.ts moves all of
+  // them with HOME, and a sweep that removed one would send the product back
+  // to the real profile.
+  USERPROFILE: 'os.homedir() on Windows; home-isolation.ts points it at the throwaway home',
+  HOMEDRIVE: 'with HOMEPATH, the home some Windows tools read; moved with HOME',
+  HOMEPATH: 'with HOMEDRIVE, the home some Windows tools read; moved with HOME',
+  APPDATA: 'Electron userData and appData on Windows; moved with HOME',
+  LOCALAPPDATA: 'per-machine app data on Windows; moved with HOME',
   // buildFullPath and the pty env composition both read it.
   SHELL: 'the pty environment is composed from it, and hooks run under it',
   // electron/ reads this in four places, so it belongs on this list even
