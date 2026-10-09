@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { projectFolders } from './project-index';
-import { encodeClaudeProjectDir, claudeProjectDirNames } from '../platform/claude-project-dir';
+import { memoryProjectDirName, knownProjectsByFolder } from '../platform/claude-project-dir';
 import { unlinkRetryingSync } from '../platform/rename-replacing';
 import { spellingsOf } from '../utils/resume-session';
 
@@ -84,9 +84,9 @@ async function readMemoryFileAsync(filePath: string): Promise<MemoryFile> {
   return memoryFile(filePath, stat, content);
 }
 
-/** Claude Code's own encoding: every character that is not a letter or a digit becomes '-'. */
+/** The folder a project's memory is created in when Claude has none for it yet (platform/claude-project-dir.ts). */
 function encodeProjectPath(projectPath: string): string {
-  return encodeClaudeProjectDir(projectPath);
+  return memoryProjectDirName(projectPath);
 }
 
 /**
@@ -97,13 +97,9 @@ function encodeProjectPath(projectPath: string): string {
 export async function listProjectMemories(extraProjectPaths: string[] = []): Promise<ProjectMemory[]> {
   const results: ProjectMemory[] = [];
   const seenPaths = new Set<string>();
-  // A folder a known project's own name points at is that project: decoding is
-  // lossy (a space comes back as a separator on macOS), and a Tars project was
-  // listed once under the guess, with its memory, and again empty.
-  const knownByFolder = new Map<string, string>();
-  for (const known of extraProjectPaths) {
-    for (const name of known ? claudeProjectDirNames(known) : []) if (!knownByFolder.has(name)) knownByFolder.set(name, known);
-  }
+  // On Windows, a folder a known project's own name points at is that project
+  // (platform/claude-project-dir.ts); elsewhere none, each folder is decoded.
+  const knownByFolder = knownProjectsByFolder(extraProjectPaths);
   /** The rows read from the CLIs' folders, by the path each folder stands for. */
   const byPath = new Map<string, ProjectMemory>();
 

@@ -52,6 +52,34 @@ export function claudeProjectDirNames(projectPath: string, platform: NodeJS.Plat
   return [...new Set([encodeClaudeProjectDir(projectPath), ...legacy.filter(oneFolder)])];
 }
 
+/**
+ * The folder Memory gives a Tars project Claude has no folder for yet, where
+ * it creates the project's MEMORY.md (memory-service). win32: Claude's own
+ * name, the one Claude reads (the old rule kept a Windows path's `:` and `\`).
+ * darwin/linux: `/` and `.` to `-`, the rule Memory has always used there,
+ * unchanged.
+ */
+export function memoryProjectDirName(projectPath: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? encodeClaudeProjectDir(projectPath) : projectPath.replace(/[/.]/g, '-');
+}
+
+/**
+ * The known projects by the folder names Claude gives them, for a listing that
+ * reads each folder back to a path (memory-service). win32: a folder one of
+ * them names is that project, whatever the disk makes of it (the decoder
+ * cannot tell `a b` from `a-b` when both exist, and the listing showed the
+ * project once under the guess and again empty). darwin/linux: none, every
+ * folder is decoded as it always was.
+ */
+export function knownProjectsByFolder(projectPaths: string[], platform: NodeJS.Platform = process.platform): Map<string, string> {
+  const byFolder = new Map<string, string>();
+  if (platform !== 'win32') return byFolder;
+  for (const known of projectPaths) {
+    for (const name of known ? claudeProjectDirNames(known, platform) : []) if (!byFolder.has(name)) byFolder.set(name, known);
+  }
+  return byFolder;
+}
+
 export interface DecodeDeps {
   platform?: NodeJS.Platform;
   /** The names in a directory; throws when it cannot be listed. */

@@ -5,7 +5,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { BUS_FILE } from '../constants';
 import { writeAtomicSync } from '../utils/secret-file';
 import { isSuperAgent } from '../utils';
-import { projectName } from '../platform';
 import { agents } from '../core/agent-manager';
 import { getProvider } from '../providers';
 import type {
@@ -262,7 +261,7 @@ export function listRooms(): BusRoom[] {
       id,
       kind: 'project',
       projectPath,
-      title: projectName(projectPath) || projectPath,
+      title: projectPath.split('/').filter(Boolean).pop() || projectPath,
       memberIds: memberIdsFor(id, 'project', projectPath),
       createdAt,
       lastMessageAt: last?.createdAt,

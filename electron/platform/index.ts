@@ -22,7 +22,10 @@ export { killTree, KillTreeError, type KillTreeResult, type KillTreeDeps, type K
 export { samePath, isUnder, isInsideWorktreesDir, isFilesystemRoot, pathKey } from './path-compare';
 export { isUnsafePathSegment } from './windows-names';
 export { projectName } from './project-name';
-export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, type DecodeDeps } from './claude-project-dir';
+export {
+  encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, memoryProjectDirName, knownProjectsByFolder,
+  type DecodeDeps,
+} from './claude-project-dir';
 export { credentialStoreDirs } from './credential-stores';
 export {
   renameReplacingSync, rmRetryingSync, unlinkRetryingSync, RENAME_RETRY_BUDGET_MS, REMOVE_RETRY_BUDGET_MS,

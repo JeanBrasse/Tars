@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir,
+  encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, memoryProjectDirName, knownProjectsByFolder,
 } from '../../../electron/platform';
 import { POSIX_CORPUS } from './posix-corpus';
 import golden from './posix-golden.json';
@@ -38,7 +38,11 @@ import golden from './posix-golden.json';
  * 8. a folder whose project is gone throws, or returns a drive-less path;
  * 9. darwin/linux, and any name that is not drive-shaped, are decoded the
  *    old way (null here, decode-project-path.ts carries on);
- * 10. an unreadable directory throws instead of ending the match.
+ * 10. an unreadable directory throws instead of ending the match;
+ * 11. Memory's folder for a project Claude never opened is not Claude's own on
+ *     win32, or is anything but `/` and `.` to `-` on darwin/linux;
+ * 12. win32: a folder a known project's names give is not mapped back to that
+ *     project; darwin/linux: any folder is.
  */
 
 describe('1. the encoder is Claude Code\'s', () => {
@@ -114,6 +118,36 @@ describe('2, 3. the folder names to read, Claude\'s first', () => {
     expect(claudeProjectDirNames('/Users/test/docs.site', 'win32')).toEqual(['-Users-test-docs-site', '-Users-test-docs.site']);
     for (const hostile of ['C:\\p\\..\\..\\Windows', 'C:/p/../../Windows', '..\\..\\x', 'C:x', '..', '.']) {
       expect(claudeProjectDirNames(hostile, 'win32'), hostile).toEqual([encodeClaudeProjectDir(hostile)]);
+    }
+  });
+});
+
+describe('11, 12. what Memory names and reads back', () => {
+  it('11. win32: Memory creates a project\'s folder under Claude\'s own name', () => {
+    expect(memoryProjectDirName('C:\\Users\\x\\My Project', 'win32')).toBe('C--Users-x-My-Project');
+    expect(memoryProjectDirName('/Users/noah/my_proj.v2', 'win32')).toBe('-Users-noah-my-proj-v2');
+  });
+
+  it('11. darwin/linux: `/` and `.` to `-`, as Memory always named it there', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(memoryProjectDirName('/Users/noah/My Project', platform)).toBe('-Users-noah-My Project');
+      expect(memoryProjectDirName('/Users/noah/my_proj.v2', platform)).toBe('-Users-noah-my_proj-v2');
+      const long = '/Users/noah/' + 'a'.repeat(300);
+      expect(memoryProjectDirName(long, platform)).toBe(long.replace(/[/.]/g, '-'));
+    }
+  });
+
+  it('12. win32: each folder name a known project gives is that project, the first known one winning', () => {
+    const known = knownProjectsByFolder(['C:\\Users\\x\\My Project', '', '/Users/noah/my_proj.v2', 'C:\\Users\\x\\My-Project'], 'win32');
+    expect(known.get('C--Users-x-My-Project')).toBe('C:\\Users\\x\\My Project');
+    expect(known.get('-Users-noah-my-proj-v2')).toBe('/Users/noah/my_proj.v2');
+    expect(known.get('-Users-noah-my_proj-v2')).toBe('/Users/noah/my_proj.v2');
+    expect([...known.values()]).not.toContain('');
+  });
+
+  it('12. darwin/linux: none, every folder is decoded as before', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(knownProjectsByFolder(['/Users/noah/My Project', '/Users/noah/tars'], platform).size).toBe(0);
     }
   });
 });

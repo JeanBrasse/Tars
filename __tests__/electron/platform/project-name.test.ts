@@ -3,23 +3,23 @@ import { describe, it, expect } from 'vitest';
 import { projectName } from '../../../electron/platform/project-name';
 
 /**
- * The name a project goes by in the bots' messages and the chat rooms: the
- * last folder of its path (audit B/J-01).
+ * The name a project goes by in the bots' agent lines: the last folder of its
+ * path (audit B/J-01).
  *
  * Each site took `projectPath.split('/').pop()`. A Windows path has no `/`, so
  * Telegram, Slack and Discord named every project by its whole path
- * (`C:\Users\x\atlas`), and the chat room was titled with it.
+ * (`C:\Users\x\atlas`).
  *
  * How it can fail, written before the code (2026-09-25):
  * 1. win32: `\` is not a separator, or `/` stops being one (Windows takes
  *    both), and the whole path comes back.
- * 2. A trailing separator gives an empty name instead of the folder's (the
- *    chat room's title already dropped it on darwin/linux; the bots did not).
+ * 2. win32: a trailing separator gives an empty name instead of the folder's.
  * 3. win32: a drive root, a share root or `C:` alone comes back as a name
  *    (`C:`, `\`) instead of nothing, which each caller turns into its own
  *    fallback ('Unknown', the path).
- * 4. darwin/linux: anything else changes. `\` is an ordinary character in a
- *    file name there, and must stay in the name.
+ * 4. darwin/linux: anything changes from `split('/').pop()`, a trailing `/`
+ *    included (it still gives ''). `\` is an ordinary character in a file
+ *    name there, and must stay in the name.
  * 5. An empty path throws instead of giving nothing.
  */
 
@@ -31,23 +31,25 @@ describe('projectName', () => {
     expect(projectName('\\\\server\\share\\team\\atlas', 'win32')).toBe('atlas');
   });
 
-  it('2. a trailing separator is dropped, on every platform', () => {
+  it('2. win32: a trailing separator is dropped', () => {
     expect(projectName('C:\\Users\\nicol\\atlas\\', 'win32')).toBe('atlas');
     expect(projectName('C:\\Users\\nicol\\atlas\\\\', 'win32')).toBe('atlas');
-    expect(projectName('/Users/noah/atlas/', 'darwin')).toBe('atlas');
-    expect(projectName('/home/noah/atlas//', 'linux')).toBe('atlas');
+    expect(projectName('C:/Users/nicol/atlas/', 'win32')).toBe('atlas');
   });
 
   it('3. win32: a root is no name', () => {
     for (const root of ['C:\\', 'C:/', 'C:', '\\', '\\\\server\\share\\']) expect(projectName(root, 'win32'), root).toBe('');
   });
 
-  it('4. darwin/linux: the last `/` segment, as every caller had it, backslashes and all', () => {
+  it('4. darwin/linux: the last `/` segment, as every caller had it, backslashes and trailing `/` alike', () => {
     for (const platform of ['darwin', 'linux'] as const) {
       expect(projectName('/Users/noah/Projects/tars', platform)).toBe('tars');
       expect(projectName('/Users/noah/a\\b', platform)).toBe('a\\b');
       expect(projectName('relative/name', platform)).toBe('name');
       expect(projectName('/', platform)).toBe('');
+      for (const p of ['/Users/noah/atlas/', '/home/noah/atlas//', 'C:\\x\\atlas\\', '//', 'a//b']) {
+        expect(projectName(p, platform), p).toBe(p.split('/').pop());
+      }
     }
   });
 
