@@ -45,10 +45,12 @@ vi.mock('os', async (importOriginal) => {
 
 import { listProjectMemories } from '../../../electron/services/memory-service';
 import { memoryStatus, projectMemoryDir } from '../../../electron/services/memory-hub';
+import { encodeClaudeProjectDir } from '../../../electron/platform/claude-project-dir';
 
 let base: string;
-/** The folder Claude Code keeps for a project at `real`, as it names it. */
-const claudeFolder = (real: string) => path.join(tmpHome, '.claude', 'projects', real.replace(/[/.]/g, '-'));
+/** The folder Claude Code keeps for a project at `real`, as it names it (on Windows, `:` and `\` to `-` as well). */
+const claudeFolder = (real: string) => path.join(tmpHome, '.claude', 'projects',
+  process.platform === 'win32' ? encodeClaudeProjectDir(real) : real.replace(/[/.]/g, '-'));
 
 /** A project at a real path, a link to it, and optionally Claude Code's folder for it with a MEMORY.md. */
 function project(name: string, withClaude: boolean): { real: string; link: string } {
@@ -56,7 +58,8 @@ function project(name: string, withClaude: boolean): { real: string; link: strin
   fs.mkdirSync(real, { recursive: true });
   const link = path.join(base, 'links', name);
   fs.mkdirSync(path.dirname(link), { recursive: true });
-  fs.symlinkSync(real, link);
+  // On Windows a junction: a folder link that needs no privilege, which a symlink does.
+  fs.symlinkSync(real, link, process.platform === 'win32' ? 'junction' : undefined);
   if (withClaude) {
     fs.mkdirSync(path.join(claudeFolder(real), 'memory'), { recursive: true });
     fs.writeFileSync(path.join(claudeFolder(real), 'session.jsonl'), '{}\n');

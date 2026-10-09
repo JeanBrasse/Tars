@@ -6,6 +6,8 @@ import { AgentStatus } from '../../types';
 import { RouteRequest } from './types';
 import { DATA_DIR_NAME, PRIVATE_DIR_NAME } from '../../constants';
 import { isHardLinkInto, isWithinDir } from '../../utils/path-identity';
+import { credentialStoreDirs } from '../../platform/credential-stores';
+import { isUnder, samePath } from '../../platform/path-compare';
 
 /** Project path or id of the calling agent, injected as a header by the MCP
  *  client from its PTY environment. Read only by the server's door, which
@@ -98,10 +100,15 @@ export function isSafeTelegramPath(filePath: string): boolean {
     path.join(home, '.docker'),
     path.join(home, '.netrc'),
     path.join(home, '.git-credentials'),
+    // Windows keeps credentials under %APPDATA% and %LOCALAPPDATA% instead
+    // (gh, gcloud, browsers, DPAPI, Tars's own profile): none elsewhere.
+    ...credentialStoreDirs({ home }),
   ];
 
+  // Compared as the platform compares paths: on Windows without case, so
+  // `.SSH` and `github cli` are refused as their own spelling is.
   for (const blocked of blockedDirs) {
-    if (resolved === blocked || resolved.startsWith(blocked + path.sep) || isWithinDir(resolved, blocked)) {
+    if (samePath(resolved, blocked) || isUnder(resolved, blocked) || isWithinDir(resolved, blocked)) {
       return false;
     }
   }

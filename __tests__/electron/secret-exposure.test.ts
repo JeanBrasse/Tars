@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { writeSecretFileSync, ensureSecretFileMode } from '../../electron/utils/secret-file';
+import { cannotSymlink } from '../setup/symlink-privilege';
+import { hasPosixModes } from '../setup/platform-limits';
 
 /** The module object itself, so a patch reaches the product's `fs` import. */
 const nodeFs = createRequire(import.meta.url)('node:fs') as typeof fs;
@@ -24,7 +26,7 @@ afterEach(() => {
 });
 
 describe('writeSecretFileSync', () => {
-  it('creates the file readable only by its owner', () => {
+  it.skipIf(!hasPosixModes())('creates the file readable only by its owner', () => {
     const p = tmp('app-settings.json');
     writeSecretFileSync(p, '{"telegramBotToken":"secret"}');
     // 0644 was the real mode of ~/.dorothy/app-settings.json, which holds every
@@ -32,7 +34,7 @@ describe('writeSecretFileSync', () => {
     expect(fs.statSync(p).mode & 0o777).toBe(0o600);
   });
 
-  it('narrows a file that already exists at 0644', () => {
+  it.skipIf(!hasPosixModes())('narrows a file that already exists at 0644', () => {
     const p = tmp('app-settings.json');
     fs.writeFileSync(p, '{}');
     fs.chmodSync(p, 0o644);
@@ -48,7 +50,7 @@ describe('writeSecretFileSync', () => {
     expect(fs.existsSync(`${p}.tmp`)).toBe(false);
   });
 
-  it('ensureSecretFileMode fixes an install that predates the 0600 write', () => {
+  it.skipIf(!hasPosixModes())('ensureSecretFileMode fixes an install that predates the 0600 write', () => {
     const p = tmp('hermes-connection.json');
     fs.writeFileSync(p, '{}');
     fs.chmodSync(p, 0o644);
@@ -60,7 +62,7 @@ describe('writeSecretFileSync', () => {
     expect(() => ensureSecretFileMode(tmp('never-written'))).not.toThrow();
   });
 
-  it('makes the directory it has to create for a secret readable by its owner only', () => {
+  it.skipIf(!hasPosixModes())('makes the directory it has to create for a secret readable by its owner only', () => {
     // Found by the audit of lot 4: ~/.tars-private came into being at 0755 on
     // an install that had nothing to migrate, because the only 0700 mkdir was
     // the migration's, and this helper created the directory it wrote into
@@ -77,7 +79,7 @@ describe('writeSecretFileSync', () => {
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   });
 
-  it('writes nothing through a link planted at its temp name', () => {
+  it.skipIf(cannotSymlink())('writes nothing through a link planted at its temp name', () => {
     // The temp name is fixed and predictable, and the old write opened it
     // following a link: the secret went into the file the link named, which
     // then took the secret's name and was chmodded 0600 on the way.
@@ -90,7 +92,7 @@ describe('writeSecretFileSync', () => {
     writeSecretFileSync(p, '{"telegramBotToken":"secret"}');
 
     expect(fs.readFileSync(victim, 'utf-8')).toBe('untouched');
-    expect(fs.statSync(victim).mode & 0o777).toBe(0o644);
+    if (hasPosixModes()) expect(fs.statSync(victim).mode & 0o777).toBe(0o644);
     expect(fs.lstatSync(p).isSymbolicLink(), 'the secret file is the planted link').toBe(false);
     expect(fs.readFileSync(p, 'utf-8')).toBe('{"telegramBotToken":"secret"}');
   });

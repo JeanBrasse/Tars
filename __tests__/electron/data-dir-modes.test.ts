@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { narrowDataDir } from '../../electron/utils/secret-file';
+import { cannotSymlink } from '../setup/symlink-privilege';
+import { hasPosixModes } from '../setup/platform-limits';
 
 vi.mock('electron', () => ({
   app: { getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), isPackaged: false, getVersion: () => '0.0.0', on: vi.fn() },
@@ -67,7 +69,7 @@ afterEach(() => {
 });
 
 describe('narrowDataDir', () => {
-  it('1-2. closes the directory and every file in it to the other accounts', () => {
+  it.skipIf(!hasPosixModes())('1-2. closes the directory and every file in it to the other accounts', () => {
     const dir = dataDir();
     const files = ['agents.json', 'kanban-tasks.json', 'usage-ledger.jsonl', 'vault.db', 'api-token'].map(n => file(dir, n, 0o644));
 
@@ -77,7 +79,7 @@ describe('narrowDataDir', () => {
     for (const f of files) expect(mode(f), path.basename(f)).toBe(0o600);
   });
 
-  it('3. closes its subdirectories', () => {
+  it.skipIf(!hasPosixModes())('3. closes its subdirectories', () => {
     const dir = dataDir();
     const vault = path.join(dir, 'vault');
     fs.mkdirSync(vault);
@@ -88,7 +90,7 @@ describe('narrowDataDir', () => {
     expect(mode(vault)).toBe(0o700);
   });
 
-  it('4. does not follow a link to change the file it points to', () => {
+  it.skipIf(cannotSymlink() || !hasPosixModes())('4. does not follow a link to change the file it points to', () => {
     const dir = dataDir();
     const outside = file(path.dirname(dir), 'project-file.txt', 0o644);
     fs.symlinkSync(outside, path.join(dir, 'link'));
@@ -98,7 +100,7 @@ describe('narrowDataDir', () => {
     expect(mode(outside)).toBe(0o644);
   });
 
-  it('5. narrows the rest when one entry cannot be changed', () => {
+  it.skipIf(!hasPosixModes())('5. narrows the rest when one entry cannot be changed', () => {
     const dir = dataDir();
     const stuck = file(dir, 'a-stuck.json', 0o644);
     const after = file(dir, 'z-after.json', 0o644);
@@ -125,7 +127,7 @@ describe('narrowDataDir', () => {
     expect(() => narrowDataDir(path.join(root, 'never-made'))).not.toThrow();
   });
 
-  it('7. keeps what the owner needs: statusline.sh stays executable', () => {
+  it.skipIf(!hasPosixModes())('7. keeps what the owner needs: statusline.sh stays executable', () => {
     const dir = dataDir();
     const script = file(dir, 'statusline.sh', 0o755);
     const own = file(dir, 'already-private.json', 0o600);
@@ -142,7 +144,7 @@ describe('the app', () => {
     const probe = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-data-modes-')), 'ordinary');
     made.push(path.dirname(probe));
     fs.mkdirSync(probe);
-    expect(mode(probe) & 0o077, 'this umask would hide the defect').not.toBe(0);
+    if (hasPosixModes()) expect(mode(probe) & 0o077, 'this umask would hide the defect').not.toBe(0);
 
     const { DATA_DIR } = await import('../../electron/constants');
     expect(DATA_DIR.startsWith(os.homedir() + path.sep), 'not the throwaway home').toBe(true);
@@ -151,7 +153,7 @@ describe('the app', () => {
 
     ensureDataDir();
 
-    expect(mode(DATA_DIR)).toBe(0o700);
+    if (hasPosixModes()) expect(mode(DATA_DIR)).toBe(0o700);
   });
 
   it('9. narrows ~/.dorothy when it starts', () => {

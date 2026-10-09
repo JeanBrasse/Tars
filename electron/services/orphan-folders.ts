@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { diskUsage } from '../platform/disk-usage';
 
 /**
  * The folders no agent owns (Noah's choice 16 of 05/10; the frames merged in
@@ -173,8 +174,9 @@ function orphanReason(dir: string): OrphanReason | null {
   return mark === 'forgotten' ? 'git-forgot' : 'no-git';
 }
 
-/** Size on disk, in bytes, as du counts it. */
+/** Size on disk, in bytes, as du counts it. Windows has no du: there the folder is added up in Node (platform/disk-usage.ts). */
 async function sizeOf(p: string): Promise<number> {
+  if (process.platform === 'win32') return diskUsage(p);
   const r = await run('du', ['-sk', p]);
   const kb = Number(r.stdout.split(/\s/)[0]);
   return Number.isFinite(kb) ? kb * 1024 : 0;
